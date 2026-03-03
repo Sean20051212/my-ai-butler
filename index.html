@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>AI Butler Vision Container</title>
+    <style>
+        body { margin: 0; background-color: #1a1a1a; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://pixijs.download/v7.x/pixi.min.js"></script>
+    <script src="live2dcubismcore.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/dist/index.min.js"></script>
+
+    <script>
+        const { Application } = PIXI;
+        const { Live2DModel } = PIXI.live2d;
+
+        async function init() {
+            // 2. 初始化畫布 (設為全螢幕)
+            const app = new Application({
+                view: document.getElementById('canvas'),
+                autoStart: true,
+                resizeTo: window,
+                backgroundColor: 0x1a1a1a,
+            });
+            document.body.appendChild(app.view);
+
+            // 3. 載入模型 (請更換為你實際的 .model3.json 路徑)
+            // 修改這一行，對應你 runtime 資料夾內的名字
+            const modelPath = "./model/Hiyori/hiyori_free_t08.model3.json";
+            const model = await Live2DModel.from(modelPath);
+
+            // 4. 設定模型外觀與位置
+            app.stage.addChild(model);
+            model.anchor.set(0.5, 0.5); // 設定中心點
+            model.x = window.innerWidth / 2;
+            model.y = window.innerHeight / 2;
+            
+            // 根據螢幕高度縮放模型 (假設模型原本很高)
+            const scale = (window.innerHeight * 0.8) / model.height;
+            model.scale.set(scale);
+
+            // 5. 讓它動起來：基本互動
+            // 自動追蹤滑鼠
+            model.trackCursor();
+
+            // 點擊觸發隨機動作
+            model.on("hit", (hitAreas) => {
+                if (hitAreas.includes("Body")) {
+                    model.motion("TapBody"); // 名稱需對應 .model3.json 內的 motion 定義
+                }
+            });
+
+            console.log("模型加載完成！");
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "my-ai-butler",
+  "version": "1.0.0",
+  "description": "",
+  "main": "live2dcubismcore.min.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sean20051212/my-ai-butler.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Sean20051212/my-ai-butler/issues"
+  },
+  "homepage": "https://github.com/Sean20051212/my-ai-butler#readme",
+  "devDependencies": {
+    "electron": "^40.7.0"
+  }
+}

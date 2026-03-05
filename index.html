@@ -4,60 +4,123 @@
     <meta charset="utf-8">
     <title>AI Butler Vision Container</title>
     <style>
-        body { margin: 0; background: transparent; overflow: hidden; }
-        canvas { display: block; width: 100vw; height: 100vh; }
+        body { 
+            margin: 0; background: transparent; overflow: hidden; 
+            font-family: "Microsoft JhengHei", sans-serif; 
+            -webkit-app-region: drag; 
+        }
+        
+        canvas { 
+            display: block; width: 100vw; height: 100vh; position: absolute; z-index: 1; 
+            -webkit-app-region: drag; /* 🌟 讓畫布可以拖曳 */
+        }
+        
+        #chat-container {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 10; display: flex; flex-direction: column; align-items: center; width: 80%;
+            -webkit-app-region: no-drag; /* 🌟 保持對話框不可拖曳，才不會干擾打字 */
+        }
+        
+        #dialogue-box {
+            background: rgba(0, 0, 0, 0.6); color: white; padding: 15px; border-radius: 10px;
+            margin-bottom: 10px; width: 100%; text-align: center; font-size: 16px;
+            display: none; text-shadow: 1px 1px 2px black;
+        }
+        
+        #input-area { display: flex; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        
+        #user-input {
+            flex-grow: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none;
+            outline: none; background: rgba(255, 255, 255, 0.9);
+        }
+        
+        #send-btn {
+            padding: 10px 20px; border: none; background: #ff7675; color: white;
+            font-weight: bold; border-radius: 0 5px 5px 0; cursor: pointer; transition: background 0.2s;
+        }
+        
+        #send-btn:hover { background: #d63031; }
     </style>
 </head>
-<body style="-webkit-app-region: drag;">
+<body>
     <script src="pixi.min.js"></script>
     <script src="live2dcubismcore.min.js"></script>
     <script src="cubism4.min.js"></script>
+    
+    <div id="chat-container">
+        <div id="dialogue-box"></div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="和 Hiyori 說點什麼吧..." autocomplete="off">
+            <button id="send-btn">發送</button>
+        </div>
+    </div>
 
     <script>
+        const Live2DModel = window.PIXI?.live2d?.Live2DModel || window.Live2DModel;
+        let hiyoriModel = null;
+
         async function init() {
-            // 從全域獲取，確保相容性
-            const Live2DModel = window.PIXI?.live2d?.Live2DModel || window.Live2DModel;
+            if (!Live2DModel) return;
 
-            if (!Live2DModel) {
-                console.error("❌ 找不到 Live2DModel。請確認 pixi.min.js 與 cubism4.min.js 確實存在於桌機的專案資料夾內！");
-                return;
-            }
-
-            // 初始化透明畫布
             const app = new PIXI.Application({
-                autoStart: true,
-                resizeTo: window,
-                backgroundAlpha: 0, // 核心：讓 PixiJS 畫布透明
-                antialias: true
+                autoStart: true, resizeTo: window, backgroundAlpha: 0, antialias: true
             });
             document.body.appendChild(app.view);
 
             try {
                 const modelPath = "./model/Hiyori/hiyori_free_t08.model3.json";
-                const model = await Live2DModel.from(modelPath);
-
-                app.stage.addChild(model);
-                model.anchor.set(0.5, 0.5); 
-                model.x = window.innerWidth / 2;
-                model.y = window.innerHeight / 2;
+                hiyoriModel = await Live2DModel.from(modelPath);
+                app.stage.addChild(hiyoriModel);
+                hiyoriModel.anchor.set(0.5, 0.5); 
+                hiyoriModel.x = window.innerWidth / 2;
+                hiyoriModel.y = window.innerHeight / 2;
+                let currentScale = (window.innerHeight * 0.8) / hiyoriModel.height;
+                hiyoriModel.scale.set(currentScale);
                 
-                const scale = (window.innerHeight * 0.8) / model.height;
-                model.scale.set(scale);
-
-                // 點擊觸發隨機動作
-                model.on("hit", (hitAreas) => {
-                    if (hitAreas.includes("Body")) {
-                        model.motion("TapBody"); 
-                    }
-                });
-
-                console.log("✅ 模型加載完成！");
+                // 注意：這裡已經把原本那一大串 isDragging 的手動拖曳邏輯全部刪除了！
+                
             } catch (e) {
                 console.error("模型加載失敗:", e);
             }
         }
+        
+        // Persona Engine 前端接收器
+        const inputField = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const dialogBox = document.getElementById('dialogue-box');
 
-        // 確保腳本載入完畢後才執行
+        async function sendMessage() {
+            const text = inputField.value.trim();
+            if (!text) return;
+            
+            inputField.value = '';
+            dialogBox.style.display = 'block';
+            dialogBox.innerText = "Hiyori 思考中...";
+            
+            try {
+                const response = await fetch('http://127.0.0.1:8000/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await response.json();
+                dialogBox.innerText = data.reply;
+                triggerEmotionAction(data.emotion);
+            } catch (error) {
+                dialogBox.innerText = "嗚...大腦連線失敗了，請檢查 FastAPI 是否有開啟。";
+            }
+        }
+        
+        function triggerEmotionAction(emotion) {
+            if (!hiyoriModel) return;
+            hiyoriModel.motion("TapBody"); 
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        inputField.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
         window.onload = init;
     </script>
 </body>

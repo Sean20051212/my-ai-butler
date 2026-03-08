@@ -4,21 +4,32 @@
     <meta charset="utf-8">
     <title>AI Butler Vision Container</title>
     <style>
+        /* 1. 移除 body 的 drag */
         body { 
             margin: 0; background: transparent; overflow: hidden; 
             font-family: "Microsoft JhengHei", sans-serif; 
-            -webkit-app-region: drag; 
         }
         
+        /* 2. 移除 canvas 的 drag */
         canvas { 
             display: block; width: 100vw; height: 100vh; position: absolute; z-index: 1; 
-            -webkit-app-region: drag; /* 🌟 讓畫布可以拖曳 */
         }
         
+        /* 🌟 3. 新增：依據你的提議，劃定一個縮小的專屬拖曳區，避開底部 100px */
+        #drag-zone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: calc(100vh - 100px); /* 留下底部空間給文字框 */
+            z-index: 5;
+            -webkit-app-region: drag; /* 只有這塊區域交給系統拖曳 */
+        }
+        
+        /* 以下維持你原本的 UI 設定 */
         #chat-container {
             position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
             z-index: 10; display: flex; flex-direction: column; align-items: center; width: 80%;
-            -webkit-app-region: no-drag; /* 🌟 保持對話框不可拖曳，才不會干擾打字 */
         }
         
         #dialogue-box {
@@ -43,6 +54,13 @@
     </style>
 </head>
 <body>
+    <div id="drag-zone"></div>
+    
+    <script src="pixi.min.js"></script>
+    <script src="live2dcubismcore.min.js"></script>
+    <script src="cubism4.min.js"></script>
+    
+    <div id="chat-container">
     <script src="pixi.min.js"></script>
     <script src="live2dcubismcore.min.js"></script>
     <script src="cubism4.min.js"></script>
@@ -123,5 +141,5 @@
 
         window.onload = init;
     </script>
-</body>
+<body>
 </html>

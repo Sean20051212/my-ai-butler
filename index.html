@@ -4,52 +4,14 @@
     <meta charset="utf-8">
     <title>AI Butler Vision Container</title>
     <style>
-        /* 1. 移除 body 的 drag */
-        body { 
-            margin: 0; background: transparent; overflow: hidden; 
-            font-family: "Microsoft JhengHei", sans-serif; 
-        }
-        
-        /* 2. 移除 canvas 的 drag */
-        canvas { 
-            display: block; width: 100vw; height: 100vh; position: absolute; z-index: 1; 
-        }
-        
-        /* 🌟 3. 新增：依據你的提議，劃定一個縮小的專屬拖曳區，避開底部 100px */
-        #drag-zone {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: calc(100vh - 100px); /* 留下底部空間給文字框 */
-            z-index: 5;
-            -webkit-app-region: drag; /* 只有這塊區域交給系統拖曳 */
-        }
-        
-        /* 以下維持你原本的 UI 設定 */
-        #chat-container {
-            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-            z-index: 10; display: flex; flex-direction: column; align-items: center; width: 80%;
-        }
-        
-        #dialogue-box {
-            background: rgba(0, 0, 0, 0.6); color: white; padding: 15px; border-radius: 10px;
-            margin-bottom: 10px; width: 100%; text-align: center; font-size: 16px;
-            display: none; text-shadow: 1px 1px 2px black;
-        }
-        
+        body { margin: 0; background: transparent; overflow: hidden; font-family: "Microsoft JhengHei", sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; position: absolute; z-index: 1; }
+        #drag-zone { position: absolute; top: 0; left: 0; width: 100vw; height: calc(100vh - 100px); z-index: 5; -webkit-app-region: drag; }
+        #chat-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 80%; }
+        #dialogue-box { background: rgba(0, 0, 0, 0.6); color: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; width: 100%; text-align: center; font-size: 16px; display: none; text-shadow: 1px 1px 2px black; }
         #input-area { display: flex; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        
-        #user-input {
-            flex-grow: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none;
-            outline: none; background: rgba(255, 255, 255, 0.9);
-        }
-        
-        #send-btn {
-            padding: 10px 20px; border: none; background: #ff7675; color: white;
-            font-weight: bold; border-radius: 0 5px 5px 0; cursor: pointer; transition: background 0.2s;
-        }
-        
+        #user-input { flex-grow: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none; outline: none; background: rgba(255, 255, 255, 0.9); }
+        #send-btn { padding: 10px 20px; border: none; background: #ff7675; color: white; font-weight: bold; border-radius: 0 5px 5px 0; cursor: pointer; transition: background 0.2s; }
         #send-btn:hover { background: #d63031; }
     </style>
 </head>
@@ -61,21 +23,16 @@
     <script src="cubism4.min.js"></script>
     
     <div id="chat-container">
-    <script src="pixi.min.js"></script>
-    <script src="live2dcubismcore.min.js"></script>
-    <script src="cubism4.min.js"></script>
-    
-    <div id="chat-container">
         <div id="dialogue-box"></div>
         <div id="input-area">
-            <input type="text" id="user-input" placeholder="和 Hiyori 說點什麼吧..." autocomplete="off">
+            <input type="text" id="user-input" placeholder="說點什麼吧..." autocomplete="off">
             <button id="send-btn">發送</button>
         </div>
     </div>
 
     <script>
         const Live2DModel = window.PIXI?.live2d?.Live2DModel || window.Live2DModel;
-        let hiyoriModel = null;
+        let live2dModel = null;
 
         async function init() {
             if (!Live2DModel) return;
@@ -86,23 +43,23 @@
             document.body.appendChild(app.view);
 
             try {
-                const modelPath = "./model/Hiyori/hiyori_free_t08.model3.json";
-                hiyoriModel = await Live2DModel.from(modelPath);
-                app.stage.addChild(hiyoriModel);
-                hiyoriModel.anchor.set(0.5, 0.5); 
-                hiyoriModel.x = window.innerWidth / 2;
-                hiyoriModel.y = window.innerHeight / 2;
-                let currentScale = (window.innerHeight * 0.8) / hiyoriModel.height;
-                hiyoriModel.scale.set(currentScale);
+                const modelPath = "./model/Yachiyo/八千代辉夜姬.model3.json";
+                live2dModel = await Live2DModel.from(modelPath);
+                app.stage.addChild(live2dModel);
+                live2dModel.anchor.set(0.5, 0.5); 
+                live2dModel.x = window.innerWidth / 2;
+                live2dModel.y = window.innerHeight / 2;
+                let currentScale = (window.innerHeight * 0.8) / live2dModel.height;
+                live2dModel.scale.set(currentScale);
                 
-                // 注意：這裡已經把原本那一大串 isDragging 的手動拖曳邏輯全部刪除了！
-                
+                // 🌟 核心防護：徹底關閉模型的滑鼠互動與視線追蹤
+                live2dModel.autoInteract = false;
+
             } catch (e) {
                 console.error("模型加載失敗:", e);
             }
         }
         
-        // Persona Engine 前端接收器
         const inputField = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
         const dialogBox = document.getElementById('dialogue-box');
@@ -113,7 +70,7 @@
             
             inputField.value = '';
             dialogBox.style.display = 'block';
-            dialogBox.innerText = "Hiyori 思考中...";
+            dialogBox.innerText = "思考中...";
             
             try {
                 const response = await fetch('http://127.0.0.1:8000/chat', {
@@ -130,8 +87,23 @@
         }
         
         function triggerEmotionAction(emotion) {
-            if (!hiyoriModel) return;
-            hiyoriModel.motion("TapBody"); 
+            if (!live2dModel) return;
+            console.log("接收到大腦情緒:", emotion);
+            
+            switch(emotion) {
+                case "happy":
+                    live2dModel.expression("笑咪咪"); 
+                    break;
+                case "sad":
+                    live2dModel.expression("眼泪");
+                    break;
+                case "surprised":
+                    live2dModel.expression("眯眯眼");
+                    break;
+                default:
+                    live2dModel.expression(); // 恢復預設
+                    break;
+            }
         }
 
         sendBtn.addEventListener('click', sendMessage);
@@ -141,5 +113,5 @@
 
         window.onload = init;
     </script>
-<body>
+</body>
 </html>

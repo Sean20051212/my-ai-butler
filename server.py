@@ -10,8 +10,13 @@ import mss
 from PIL import Image
 import io
 from ollama import Client as OllamaClient
+import opencc
+import re
 
 app = FastAPI()
+
+# 建立簡體轉繁體 (台灣標準) 的轉換器
+converter = opencc.OpenCC('s2twp')
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +52,8 @@ hiyori_state = {
 chat_history = []
 MAX_HISTORY = 6 
 
+is_chatting = False  # 🌟 新增：判斷是否正在對話中，避免視覺與對話模型同時搶佔 Ollama 資源
+
 # ==========================================
 # 👁️ 背景視神經迴圈 (Saccade 掃視機制)
 # ==========================================
@@ -54,10 +61,16 @@ MAX_HISTORY = 6
 # 👁️ 背景視神經迴圈 (中央加權掃視 + 語意封殺)
 # ==========================================
 def vision_loop():
+    global is_chatting
     print("👁️ 視神經已啟動，開始在背景隨機觀察螢幕...")
     box_size = 512
     
     while True:
+        # 如果正在聊天，就暫停視覺處理，避免搶佔資源
+        if is_chatting:
+            time.sleep(1)
+            continue
+            
         try:
             with mss.mss() as sct:
                 monitor = sct.monitors[1]
@@ -154,6 +167,9 @@ def get_dynamic_system_prompt():
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
+    global is_chatting
+    is_chatting = True  # 標記正在聊天，暫停背景視覺
+    start_time = time.time()  # ⏳ 開始計時
     try:
         messages = [{"role": "system", "content": get_dynamic_system_prompt()}]
         for msg in chat_history:
@@ -169,6 +185,14 @@ async def chat(request: ChatRequest):
         )
         
         raw_content = response.choices[0].message.content
+        
+        # 🌟 1. 清洗常見的模型特殊標籤 (Special Tokens) 與怪異前綴
+        # 移除 /INFO/、<|im_start|> 等不該出現在給玩家看的文字
+        raw_content = re.sub(r'(/INFO/|<\|im_start\|>|<\|im_end\|>|<\|.*\|>|\[System\]|\[Assistant\])', '', raw_content)
+        
+        # 🌟 2. 強制將模型輸出的內容（包含可能的簡體字）轉成台灣慣用語的繁體中文
+        raw_content = converter.convert(raw_content)
+        
         result = json.loads(raw_content)
         
         chat_history.append({"role": "user", "content": request.message})
@@ -180,7 +204,10 @@ async def chat(request: ChatRequest):
             
         hiyori_state["current_mood"] = result.get("emotion", "neutral")
         
+        elapsed_time = time.time() - start_time  # ⏳ 計算耗時
+        
         print("\n" + "="*40)
+        print(f"⏱️ 思考耗時: {elapsed_time:.2f} 秒")
         print(f"👁️ 潛意識視覺: {hiyori_state['latest_vision']}")
         print(f"🤔 內心 OS: {result.get('inner_thought', '沒想什麼')}")
         print(f"💬 實際回答: {result.get('reply', '')}")
@@ -191,3 +218,5 @@ async def chat(request: ChatRequest):
     except Exception as e:
         print(f"大腦發生錯誤: {e}")
         return {"reply": "嗚...我的大腦好像有點當機了...", "emotion": "sad"}
+    finally:
+        is_chatting = False  # 聊天結束，恢復背景視覺

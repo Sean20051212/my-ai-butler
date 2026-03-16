@@ -1,3 +1,4 @@
+import base64
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,6 +13,9 @@ import io
 from ollama import Client as OllamaClient
 import opencc
 import re
+import os
+import requests
+import urllib.parse
 
 app = FastAPI()
 
@@ -46,7 +50,7 @@ hiyori_state = {
     "stress_level": 20,  
     "energy_level": 80,  
     "current_mood": "neutral",
-    "latest_vision": "目前沒看到什麼特別的"  # 👁️ 新增：潛意識視覺記憶
+    "latest_vision": "目前沒看到什麼特別的"  
 }
 
 chat_history = []
@@ -55,8 +59,40 @@ MAX_HISTORY = 6
 is_chatting = False  # 🌟 新增：判斷是否正在對話中，避免視覺與對話模型同時搶佔 Ollama 資源
 
 # ==========================================
-# 👁️ 背景視神經迴圈 (Saccade 掃視機制)
+# 👄 發聲神經：呼叫 GPT-SoVITS API
 # ==========================================
+def speak_out_loud(text):
+    print(f"🎙️ 正在準備發聲: {text}")
+    
+    # ⚠️ 【請修改這裡】換成妳那段日文參考音檔的絕對路徑
+    ref_audio_path = r"C:\Users\User\Documents\Audacity\vocal_YACHIYO_NORMAL.wav_10.wav" 
+    
+    # 參考音檔裡實際說的台詞與語言設定
+    prompt_text = "触れたらあったかいかなっていつも思うんだ" 
+    prompt_lang = "ja" 
+    text_lang = "zh"   
+
+    # 將參數進行 URL 編碼
+    encoded_text = urllib.parse.quote(text)
+    encoded_ref_audio = urllib.parse.quote(ref_audio_path)
+    encoded_prompt_text = urllib.parse.quote(prompt_text)
+    
+    # 組裝 API 請求網址
+    url = f"http://127.0.0.1:9880/tts?text={encoded_text}&text_lang={text_lang}&ref_audio_path={encoded_ref_audio}&prompt_text={encoded_prompt_text}&prompt_lang={prompt_lang}&text_split_method=cut5"
+
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            # 將合成的語音存成本地端檔案
+            output_path = os.path.join(os.getcwd(), "reply.wav")
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+            print(f"🎵 語音合成完畢！已儲存至 {output_path}")
+        else:
+            print(f"⚠️ 語音合成失敗，狀態碼: {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ 無法連線到 TTS API (請確認 api_v2.py 是否有啟動): {e}")
+
 # ==========================================
 # 👁️ 背景視神經迴圈 (中央加權掃視 + 語意封殺)
 # ==========================================
@@ -66,7 +102,6 @@ def vision_loop():
     box_size = 512
     
     while True:
-        # 如果正在聊天，就暫停視覺處理，避免搶佔資源
         if is_chatting:
             time.sleep(1)
             continue
@@ -77,15 +112,12 @@ def vision_loop():
                 width = monitor["width"]
                 height = monitor["height"]
                 
-                # 🌟 1. 避開邊緣陷阱：設定「安全觀看區」，不看瀏覽器分頁與工具列
-                # 假設避開畫面四周的 15% 邊界
                 safe_margin_x = int(width * 0.15)
                 safe_margin_y = int(height * 0.15)
                 
                 max_x = width - box_size - safe_margin_x
                 max_y = height - box_size - safe_margin_y
                 
-                # 在安全區內隨機移動視線
                 rand_x = random.randint(safe_margin_x, max_x) if max_x > safe_margin_x else width // 2 - box_size // 2
                 rand_y = random.randint(safe_margin_y, max_y) if max_y > safe_margin_y else height // 2 - box_size // 2
                 
@@ -103,7 +135,6 @@ def vision_loop():
                 img.save(img_byte_arr, format='JPEG')
                 img_bytes = img_byte_arr.getvalue()
 
-            # 🌟 2. 語意封殺：直接禁用電腦相關單字，強迫它描述「現實」
             prompt = "Describe the characters, objects, or narrative actions in this scene. ABSOLUTELY DO NOT use words like 'screen', 'UI', 'interface', 'website', 'youtube', 'browser', 'screenshot', or 'phone'. Describe it as if you are looking at a real scene."
             
             response = vision_client.chat(
@@ -123,7 +154,6 @@ def vision_loop():
             
         time.sleep(8)
 
-# 啟動背景執行緒 (設定為 daemon，這樣關閉 FastAPI 時眼睛也會自動閉上)
 threading.Thread(target=vision_loop, daemon=True).start()
 
 # ==========================================
@@ -168,8 +198,8 @@ def get_dynamic_system_prompt():
 @app.post("/chat")
 async def chat(request: ChatRequest):
     global is_chatting
-    is_chatting = True  # 標記正在聊天，暫停背景視覺
-    start_time = time.time()  # ⏳ 開始計時
+    is_chatting = True  
+    start_time = time.time()  
     try:
         messages = [{"role": "system", "content": get_dynamic_system_prompt()}]
         for msg in chat_history:
@@ -185,18 +215,14 @@ async def chat(request: ChatRequest):
         )
         
         raw_content = response.choices[0].message.content
-        
-        # 🌟 1. 清洗常見的模型特殊標籤 (Special Tokens) 與怪異前綴
-        # 移除 /INFO/、<|im_start|> 等不該出現在給玩家看的文字
         raw_content = re.sub(r'(/INFO/|<\|im_start\|>|<\|im_end\|>|<\|.*\|>|\[System\]|\[Assistant\])', '', raw_content)
-        
-        # 🌟 2. 強制將模型輸出的內容（包含可能的簡體字）轉成台灣慣用語的繁體中文
         raw_content = converter.convert(raw_content)
         
         result = json.loads(raw_content)
+        reply_text = result.get("reply", "")
         
         chat_history.append({"role": "user", "content": request.message})
-        chat_history.append({"role": "assistant", "content": result["reply"]})
+        chat_history.append({"role": "assistant", "content": reply_text})
         
         if len(chat_history) > MAX_HISTORY:
             chat_history.pop(0) 
@@ -204,19 +230,33 @@ async def chat(request: ChatRequest):
             
         hiyori_state["current_mood"] = result.get("emotion", "neutral")
         
-        elapsed_time = time.time() - start_time  # ⏳ 計算耗時
+        elapsed_time = time.time() - start_time  
         
         print("\n" + "="*40)
         print(f"⏱️ 思考耗時: {elapsed_time:.2f} 秒")
         print(f"👁️ 潛意識視覺: {hiyori_state['latest_vision']}")
         print(f"🤔 內心 OS: {result.get('inner_thought', '沒想什麼')}")
-        print(f"💬 實際回答: {result.get('reply', '')}")
+        print(f"💬 實際回答: {reply_text}")
         print("="*40 + "\n")
 
+        # ==================== (找到這段並替換) ====================
+        # 🌟 觸發發聲神經：將 Qwen 生成的對話送去合成音檔
+        if reply_text:
+            speak_out_loud(reply_text)
+            
+            # 讀取剛產生的 reply.wav，並轉成 Base64 字串
+            audio_path = os.path.join(os.getcwd(), "reply.wav")
+            if os.path.exists(audio_path):
+                with open(audio_path, "rb") as f:
+                    audio_data = f.read()
+                    # 將 Base64 音訊加入要回傳給前端的 JSON 裡
+                    result["audio_base64"] = base64.b64encode(audio_data).decode("utf-8")
+        
         return result
+        # ==========================================================
     
     except Exception as e:
         print(f"大腦發生錯誤: {e}")
         return {"reply": "嗚...我的大腦好像有點當機了...", "emotion": "sad"}
     finally:
-        is_chatting = False  # 聊天結束，恢復背景視覺
+        is_chatting = False

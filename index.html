@@ -79,10 +79,42 @@
                     body: JSON.stringify({ message: text })
                 });
                 const data = await response.json();
+                
+                // 1. 顯示文字與改變表情
                 dialogBox.innerText = data.reply;
                 triggerEmotionAction(data.emotion);
-            } catch (error) {
-                dialogBox.innerText = "嗚...大腦連線失敗了，請檢查 FastAPI 是否有開啟。";
+
+                // ==================== (找到這段並替換) ====================
+                // 🌟 2. 處理語音與動態嘴型同步 (LipSync)
+                if (data.audio_base64 && live2dModel) {
+                    console.log("🎵 收到語音資料，準備播放並同步嘴型...");
+                    // 將 Base64 轉換為瀏覽器可播放的音檔來源
+                    const audioSrc = "data:audio/wav;base64," + data.audio_base64;
+                    const audio = new Audio(audioSrc);
+                    audio.play();
+
+                    // 手動實作嘴型同步：用計時器不斷改變嘴巴開合度
+                    const lipSyncInterval = setInterval(() => {
+                        if (!audio.paused) {
+                            // 隨機產生 0.2 ~ 0.9 的開合幅度來模擬說話節奏
+                            const mouthOpen = Math.random() * 0.7 + 0.2;
+                            // 強制修改 Live2D 核心的嘴巴參數
+                            live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen);
+                        }
+                    }, 80); // 每 80 毫秒更新一次嘴型，讓動作看起來流暢
+
+                    // 當音檔播放完畢時，關閉驅動器並閉上嘴巴
+                    audio.onended = () => {
+                        clearInterval(lipSyncInterval);
+                        live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+                    };
+                }
+                // ==========================================================
+
+            }  catch (error) {
+                console.error("前端發生錯誤:", error);
+                // 🌟 讓畫面的對話框直接顯示真正的錯誤原因
+                dialogBox.innerText = "🚨 前端錯誤: " + error.message;
             }
         }
         

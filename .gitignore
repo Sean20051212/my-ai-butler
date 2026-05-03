@@ -1,4 +1,54 @@
 node_modules/
 venv/
 __pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
 .env
+
+# TTS 合成音檔輸出
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# GPT-SoVITS 與 PyTorch 模型權重
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
+SoVITS_weights/
+GPT_weights/
+pretrained_models/
+
+# 向量資料庫（ChromaDB / FAISS）
+chroma_db/
+*.faiss
+*.index
+db/
+
+# Playwright MCP 工具
+.playwright-mcp/
+
+# TTS 訓練資料
+dataset/
+wavs/
+audio_clips/
+raw_audio/
+
+# 日誌與暫存
+*.log
+logs/
+temp/
+tmp/
+*.tmp
+output/
+
+# 作業系統 / IDE
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

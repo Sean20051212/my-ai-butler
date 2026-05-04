@@ -1,4 +1,7 @@
+import sys
 import base64
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -250,10 +253,8 @@ def get_dynamic_system_prompt():
 {length_instruction}
 
 【輸出格式】
-必須「嚴格」回傳 JSON 格式，包含：
-1. "inner_thought": (字串) 推測主人的弦外之音、感受自己的狀態，以及妳剛才看到的畫面帶給妳什麼想法。
-2. "reply": (字串) 妳實際說出口的回答。
-3. "emotion": (字串) 妳的外在表情，只能是: ["neutral", "happy", "angry", "sad", "surprised", "shy"]。
+必須嚴格回傳以下 JSON，欄位順序不可更改，全部填寫：
+{{"reply": "妳說出口的話（必填，不可空白）", "emotion": "neutral/happy/angry/sad/surprised/shy 其中一個", "inner_thought": "妳的內心想法"}}
 """
 
 @app.post("/chat")
@@ -280,8 +281,11 @@ async def chat(request: ChatRequest):
         raw_content = converter.convert(raw_content)
         
         result = json.loads(raw_content)
-        reply_text = result.get("reply", "")
-        
+        reply_text = result.get("reply", "").strip()
+        if not reply_text:
+            reply_text = "嗯...（沉默了一下）"
+            result["reply"] = reply_text
+
         chat_history.append({"role": "user", "content": request.message})
         chat_history.append({"role": "assistant", "content": reply_text})
         

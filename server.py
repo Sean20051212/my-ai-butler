@@ -16,6 +16,21 @@ import re
 import os
 import requests
 import urllib.parse
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# 驗證必要環境變數
+_TTS_REF_AUDIO_PATH = os.getenv("TTS_REF_AUDIO_PATH", "")
+if not _TTS_REF_AUDIO_PATH:
+    print("⚠️  警告：TTS_REF_AUDIO_PATH 未設定，語音合成將無法使用。請複製 .env.example 為 .env 並填入路徑。")
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+CHAT_MODEL      = os.getenv("CHAT_MODEL", "qwen2.5:7b")
+VISION_MODEL    = os.getenv("VISION_MODEL", "llava")
+TTS_API_URL     = os.getenv("TTS_API_URL", "http://127.0.0.1:9880")
+TTS_PROMPT_TEXT = os.getenv("TTS_PROMPT_TEXT", "触れたらあったかいかなっていつも思うんだ")
+TTS_PROMPT_LANG = os.getenv("TTS_PROMPT_LANG", "ja")
 
 app = FastAPI()
 
@@ -32,12 +47,12 @@ app.add_middleware(
 
 # 說話用的大腦 (Qwen)
 chat_client = OpenAI(
-    base_url='http://localhost:11434/v1',
-    api_key='ollama' 
+    base_url=f'{OLLAMA_BASE_URL}/v1',
+    api_key='ollama'
 )
 
 # 視覺用的眼睛 (LLaVA)
-vision_client = OllamaClient(host='http://localhost:11434')
+vision_client = OllamaClient(host=OLLAMA_BASE_URL)
 
 class ChatRequest(BaseModel):
     message: str
@@ -59,31 +74,78 @@ MAX_HISTORY = 6
 is_chatting = False  # 🌟 新增：判斷是否正在對話中，避免視覺與對話模型同時搶佔 Ollama 資源
 
 # ==========================================
-# 👄 發聲神經：呼叫 GPT-SoVITS API
+# 📝 TTS 文字前處理管線
+# ==========================================
+_EN_LETTER_ZH = {
+    'a': '誒', 'b': '逼', 'c': '西', 'd': '低', 'e': '伊',
+    'f': '誒夫', 'g': '機', 'h': '誒曲', 'i': '愛', 'j': '傑',
+    'k': '誒', 'l': '誒喔', 'm': '誒母', 'n': '恩', 'o': '歐',
+    'p': '逼', 'q': '克由', 'r': '啊爾', 's': '誒斯', 't': '踢',
+    'u': '有', 'v': '唯', 'w': '搭不溜', 'x': '伊克斯', 'y': '慰', 'z': '賊'
+}
+
+def preprocess_for_tts(text: str) -> str:
+    # 1. 移除 Markdown 排版符號（LLM 常輸出這些）
+    text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
+    text = re.sub(r'#{1,6}\s*', '', text)
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    text = re.sub(r'\[(.+?)\]\(.*?\)', r'\1', text)
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+
+    # 2. 英文單字逐字母轉中文讀音（避免 TTS 漏讀）
+    text = re.sub(r'[A-Za-z]+', lambda m: ''.join(
+        _EN_LETTER_ZH.get(c.lower(), '') for c in m.group()
+    ), text)
+
+    # 3. 過濾生僻字（保留 CJK 常用區、假名、常用標點、數字）
+    _SAFE_PUNCT = set('，。！？、；：「」『』【】《》…—～')
+    filtered = []
+    for c in text:
+        cp = ord(c)
+        if (0x4E00 <= cp <= 0x9FFF or
+                0x3400 <= cp <= 0x4DBF or
+                0xF900 <= cp <= 0xFAFF or
+                0x3040 <= cp <= 0x30FF or
+                c in _SAFE_PUNCT or c.isdigit()):
+            filtered.append(c)
+        else:
+            filtered.append('，')
+    text = ''.join(filtered)
+
+    # 4. 清理連續標點和多餘空白
+    text = re.sub(r'[，。！？]{2,}', '。', text)
+    text = text.strip('，')
+
+    return text
+
+# ==========================================
+# 👄 發聲神經：防吞音特化版 GPT-SoVITS API
 # ==========================================
 def speak_out_loud(text):
+    text = preprocess_for_tts(text)
+    if not text:
+        return
     print(f"🎙️ 正在準備發聲: {text}")
     
-    # ⚠️ 【請修改這裡】換成妳那段日文參考音檔的絕對路徑
-    ref_audio_path = r"C:\Users\User\Documents\Audacity\vocal_YACHIYO_NORMAL.wav_10.wav" 
-    
-    # 參考音檔裡實際說的台詞與語言設定
-    prompt_text = "触れたらあったかいかなっていつも思うんだ" 
-    prompt_lang = "ja" 
-    text_lang = "zh"   
+    ref_audio_path = _TTS_REF_AUDIO_PATH
+    prompt_text    = TTS_PROMPT_TEXT
+    prompt_lang    = TTS_PROMPT_LANG
+    text_lang      = "auto"
 
-    # 將參數進行 URL 編碼
+    # 將文字參數進行 URL 編碼
     encoded_text = urllib.parse.quote(text)
     encoded_ref_audio = urllib.parse.quote(ref_audio_path)
     encoded_prompt_text = urllib.parse.quote(prompt_text)
     
-    # 組裝 API 請求網址
-    url = f"http://127.0.0.1:9880/tts?text={encoded_text}&text_lang={text_lang}&ref_audio_path={encoded_ref_audio}&prompt_text={encoded_prompt_text}&prompt_lang={prompt_lang}&text_split_method=cut5"
+    # 🌟 修正 2 & 3：加入切分邏輯 cut2 與 穩定器參數
+    # cut2 = 遇到標點符號就切斷換氣，降低吞音率
+    # temperature=0.5 (降低隨機性，咬字更清楚)
+    # top_p=0.5, top_k=10 (限制發散，防止黏音)
+    url = f"{TTS_API_URL}/tts?text={encoded_text}&text_lang={text_lang}&ref_audio_path={encoded_ref_audio}&prompt_text={encoded_prompt_text}&prompt_lang={prompt_lang}&text_split_method=cut2&temperature=0.5&top_k=10&top_p=0.5"
 
     try:
         response = requests.get(url)
         if response.status_code == 200:
-            # 將合成的語音存成本地端檔案
             output_path = os.path.join(os.getcwd(), "reply.wav")
             with open(output_path, "wb") as f:
                 f.write(response.content)
@@ -91,8 +153,7 @@ def speak_out_loud(text):
         else:
             print(f"⚠️ 語音合成失敗，狀態碼: {response.status_code}")
     except Exception as e:
-        print(f"⚠️ 無法連線到 TTS API (請確認 api_v2.py 是否有啟動): {e}")
-
+        print(f"⚠️ 無法連線到 TTS API: {e}")
 # ==========================================
 # 👁️ 背景視神經迴圈 (中央加權掃視 + 語意封殺)
 # ==========================================
@@ -138,7 +199,7 @@ def vision_loop():
             prompt = "Describe the characters, objects, or narrative actions in this scene. ABSOLUTELY DO NOT use words like 'screen', 'UI', 'interface', 'website', 'youtube', 'browser', 'screenshot', or 'phone'. Describe it as if you are looking at a real scene."
             
             response = vision_client.chat(
-                model='llava',
+                model=VISION_MODEL,
                 messages=[{
                     'role': 'user',
                     'content': prompt,
@@ -208,7 +269,7 @@ async def chat(request: ChatRequest):
         messages.append({"role": "user", "content": request.message})
 
         response = chat_client.chat.completions.create(
-            model="qwen2.5:7b",
+            model=CHAT_MODEL,
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0.4 
@@ -229,7 +290,26 @@ async def chat(request: ChatRequest):
             chat_history.pop(0) 
             
         hiyori_state["current_mood"] = result.get("emotion", "neutral")
-        
+
+        # 根據情緒與對話內容動態調整角色狀態
+        emotion = hiyori_state["current_mood"]
+        if emotion in ("happy", "excited"):
+            hiyori_state["trust_level"]  = min(100, hiyori_state["trust_level"] + 2)
+            hiyori_state["stress_level"] = max(0,   hiyori_state["stress_level"] - 3)
+            hiyori_state["energy_level"] = max(0,   hiyori_state["energy_level"] - 1)
+        elif emotion in ("angry", "sad"):
+            hiyori_state["stress_level"] = min(100, hiyori_state["stress_level"] + 5)
+            hiyori_state["trust_level"]  = max(0,   hiyori_state["trust_level"] - 1)
+            hiyori_state["energy_level"] = max(0,   hiyori_state["energy_level"] - 2)
+        elif emotion == "shy":
+            hiyori_state["trust_level"]  = min(100, hiyori_state["trust_level"] + 1)
+        else:
+            # neutral / surprised：精力自然消耗
+            hiyori_state["energy_level"] = max(0, hiyori_state["energy_level"] - 1)
+
+        # 精力每次對話後少量恢復（模擬休息感）
+        hiyori_state["energy_level"] = min(100, hiyori_state["energy_level"] + 0)
+
         elapsed_time = time.time() - start_time  
         
         print("\n" + "="*40)

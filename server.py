@@ -21,6 +21,9 @@ import requests
 import urllib.parse
 from dotenv import load_dotenv
 
+# 專案根目錄（不依賴 cwd，--reload 重啟後也不會漂移）
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 load_dotenv()
 
 # 驗證必要環境變數
@@ -147,16 +150,20 @@ def speak_out_loud(text):
     url = f"{TTS_API_URL}/tts?text={encoded_text}&text_lang={text_lang}&ref_audio_path={encoded_ref_audio}&prompt_text={encoded_prompt_text}&prompt_lang={prompt_lang}&text_split_method=cut2&temperature=0.5&top_k=10&top_p=0.5"
 
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=30)
         if response.status_code == 200:
-            output_path = os.path.join(os.getcwd(), "reply.wav")
+            output_path = os.path.join(PROJECT_DIR, "reply.wav")
             with open(output_path, "wb") as f:
                 f.write(response.content)
-            print(f"🎵 語音合成完畢！已儲存至 {output_path}")
+            print(f"🎵 語音合成完畢 ({len(response.content)//1024} KB) → {output_path}")
+            return True
         else:
-            print(f"⚠️ 語音合成失敗，狀態碼: {response.status_code}")
+            print(f"⚠️ TTS 回傳異常，狀態碼: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        print("⚠️ TTS 離線（port 9880 無回應），請先啟動 GPT-SoVITS")
     except Exception as e:
-        print(f"⚠️ 無法連線到 TTS API: {e}")
+        print(f"⚠️ TTS 錯誤: {e}")
+    return False
 # ==========================================
 # 👁️ 背景視神經迴圈 (中央加權掃視 + 語意封殺)
 # ==========================================
@@ -323,21 +330,15 @@ async def chat(request: ChatRequest):
         print(f"💬 實際回答: {reply_text}")
         print("="*40 + "\n")
 
-        # ==================== (找到這段並替換) ====================
-        # 🌟 觸發發聲神經：將 Qwen 生成的對話送去合成音檔
+        # 觸發 TTS，只有合成成功才回傳音訊（避免回傳舊的 reply.wav）
         if reply_text:
-            speak_out_loud(reply_text)
-            
-            # 讀取剛產生的 reply.wav，並轉成 Base64 字串
-            audio_path = os.path.join(os.getcwd(), "reply.wav")
-            if os.path.exists(audio_path):
+            tts_ok = speak_out_loud(reply_text)
+            if tts_ok:
+                audio_path = os.path.join(PROJECT_DIR, "reply.wav")
                 with open(audio_path, "rb") as f:
-                    audio_data = f.read()
-                    # 將 Base64 音訊加入要回傳給前端的 JSON 裡
-                    result["audio_base64"] = base64.b64encode(audio_data).decode("utf-8")
-        
+                    result["audio_base64"] = base64.b64encode(f.read()).decode("utf-8")
+
         return result
-        # ==========================================================
     
     except Exception as e:
         print(f"大腦發生錯誤: {e}")

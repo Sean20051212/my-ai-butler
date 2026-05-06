@@ -26,9 +26,13 @@ pretrained_models/
 
 # 向量資料庫（ChromaDB / FAISS）
 chroma_db/
+data/chroma/
 *.faiss
 *.index
 db/
+
+# Audio cache (generated at runtime)
+cache/audio/*.wav
 
 # Playwright MCP 工具
 .playwright-mcp/

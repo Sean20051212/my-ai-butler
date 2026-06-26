@@ -1,0 +1,15 @@
+# Optional features. Install with:  pip install -r requirements-optional.txt
+# The app runs without these — each feature degrades gracefully when its
+# dependency is missing (vision falls back to the VLM screenshot layer;
+# long-term memory is silently disabled).
+
+# Vision — structured perception layers (higher priority than VLM screenshot).
+#   playwright also needs:  playwright install chromium
+#   DOM source needs the browser launched with --remote-debugging-port
+playwright
+pywinauto
+
+# Long-term memory (Obsidian vault RAG).
+#   enable by setting OBSIDIAN_VAULT_PATH in .env
+#   also requires:  ollama pull nomic-embed-text
+chromadb

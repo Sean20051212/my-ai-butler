@@ -1,0 +1,30 @@
+# Core runtime + tests. This is what CI installs.
+# Optional perception/memory features live in requirements-optional.txt
+# (the app degrades gracefully without them).
+
+# Web framework
+fastapi
+uvicorn[standard]
+
+# LLM clients
+openai
+ollama
+
+# HTTP (memory embedding calls)
+requests
+
+# TTS text preprocessing
+opencc-python-reimplemented
+pypinyin
+
+# Vision — screenshot fallback (VLM layer, always available)
+mss
+Pillow
+
+# Environment
+python-dotenv
+
+# Testing
+pytest
+pytest-asyncio
+httpx

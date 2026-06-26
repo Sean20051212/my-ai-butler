@@ -1,3 +1,7 @@
+# Core runtime + tests. This is what CI installs.
+# Optional perception/memory features live in requirements-optional.txt
+# (the app degrades gracefully without them).
+
 # Web framework
 fastapi
 uvicorn[standard]
@@ -5,6 +9,9 @@ uvicorn[standard]
 # LLM clients
 openai
 ollama
+
+# HTTP (memory embedding calls)
+requests
 
 # TTS text preprocessing
 opencc-python-reimplemented
@@ -14,19 +21,8 @@ pypinyin
 mss
 Pillow
 
-# Vision — structured perception layers (optional; chain degrades to VLM
-# screenshot if these are absent).
-#   playwright also needs:  playwright install chromium
-#   DOM source needs the browser launched with --remote-debugging-port
-playwright
-pywinauto
-
 # Environment
 python-dotenv
-
-# Long-term memory (optional — enable by setting OBSIDIAN_VAULT_PATH in .env)
-# Also requires: ollama pull nomic-embed-text
-chromadb
 
 # Testing
 pytest

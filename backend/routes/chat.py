@@ -7,8 +7,8 @@ import time
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from backend.services import tts
 from backend.services.llm import get_dynamic_system_prompt, get_llm_provider
+from backend.services.tts import TTSCache, get_tts_provider
 from backend.services.vision import get_vision_chain
 from backend.utils.text import converter
 
@@ -16,6 +16,7 @@ router = APIRouter()
 
 llm_provider = get_llm_provider()
 vision_chain = get_vision_chain()
+tts_cache    = TTSCache(get_tts_provider())
 
 
 class ChatRequest(BaseModel):
@@ -77,7 +78,7 @@ async def chat(request: ChatRequest, req: Request):
         print(f"{'='*40}\n")
 
         # ── TTS (cache-aware) ──────────────────────────────────────────
-        audio_bytes = tts.get_audio(reply_text)
+        audio_bytes = tts_cache.get_audio(reply_text)
         if audio_bytes:
             result["audio_base64"] = base64.b64encode(audio_bytes).decode("utf-8")
 

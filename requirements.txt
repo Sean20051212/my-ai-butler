@@ -10,9 +10,16 @@ ollama
 opencc-python-reimplemented
 pypinyin
 
-# Screen capture
+# Vision — screenshot fallback (VLM layer, always available)
 mss
 Pillow
+
+# Vision — structured perception layers (optional; chain degrades to VLM
+# screenshot if these are absent).
+#   playwright also needs:  playwright install chromium
+#   DOM source needs the browser launched with --remote-debugging-port
+playwright
+pywinauto
 
 # Environment
 python-dotenv

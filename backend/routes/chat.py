@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import re
@@ -8,11 +9,13 @@ from pydantic import BaseModel
 
 from backend.services import tts
 from backend.services.llm import get_dynamic_system_prompt, get_llm_provider
+from backend.services.vision import get_vision_chain
 from backend.utils.text import converter
 
 router = APIRouter()
 
 llm_provider = get_llm_provider()
+vision_chain = get_vision_chain()
 
 
 class ChatRequest(BaseModel):
@@ -23,10 +26,16 @@ class ChatRequest(BaseModel):
 async def chat(request: ChatRequest, req: Request):
     state  = req.app.state.character
     memory = req.app.state.memory
-    state.is_chatting = True
     start_time = time.time()
 
     try:
+        # ── Perceive on demand (DOM → accessibility → VLM) ──────────────
+        # Run off the event loop: sources may block (HTTP/screenshot) and the
+        # Playwright sync API refuses to run inside a running asyncio loop.
+        vision = await asyncio.to_thread(vision_chain.capture)
+        if vision is not None:
+            state.latest_vision = vision
+
         # ── Build message list ──────────────────────────────────────────
         system_prompt = get_dynamic_system_prompt(state)
 
@@ -80,5 +89,3 @@ async def chat(request: ChatRequest, req: Request):
     except Exception as exc:
         print(f"Chat error: {exc}")
         return {"reply": "嗚...我的大腦好像有點當機了...", "emotion": "sad"}
-    finally:
-        state.is_chatting = False

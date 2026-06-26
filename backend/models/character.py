@@ -3,17 +3,12 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CharacterState:
-    """Mutable runtime state for the Hiyori character.
-
-    Shared between the vision background thread and the chat endpoint.
-    Simple dict-level assignments are GIL-safe in CPython for this use case.
-    """
+    """Mutable runtime state for the Hiyori character."""
     trust_level:   int  = 45
     stress_level:  int  = 20
     energy_level:  int  = 80
     current_mood:  str  = "neutral"
     latest_vision: str  = "目前沒看到什麼特別的"
-    is_chatting:   bool = False
     chat_history:  list = field(default_factory=list)
     MAX_HISTORY:   int  = 6
 

@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.models.character import CharacterState
 from backend.routes.chat import router as chat_router
 from backend.services.memory import MemoryService
-from backend.services.vision import start_vision_loop
 
 
 @asynccontextmanager
@@ -14,7 +13,6 @@ async def lifespan(app: FastAPI):
     # ── Startup ────────────────────────────────────────────────────────
     app.state.character = CharacterState()
     app.state.memory    = MemoryService()
-    start_vision_loop(app.state.character)
     print("Hiyori is ready.")
     yield
     # ── Shutdown ───────────────────────────────────────────────────────

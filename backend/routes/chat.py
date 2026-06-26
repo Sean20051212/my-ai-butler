@@ -6,10 +6,13 @@ import time
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from backend.services import llm, tts
+from backend.services import tts
+from backend.services.llm import get_dynamic_system_prompt, get_llm_provider
 from backend.utils.text import converter
 
 router = APIRouter()
+
+llm_provider = get_llm_provider()
 
 
 class ChatRequest(BaseModel):
@@ -25,7 +28,7 @@ async def chat(request: ChatRequest, req: Request):
 
     try:
         # ── Build message list ──────────────────────────────────────────
-        system_prompt = llm.get_dynamic_system_prompt(state)
+        system_prompt = get_dynamic_system_prompt(state)
 
         memory_context = memory.query(request.message)
         if memory_context:
@@ -36,8 +39,7 @@ async def chat(request: ChatRequest, req: Request):
         messages.append({"role": "user", "content": request.message})
 
         # ── LLM call ───────────────────────────────────────────────────
-        response    = llm.call_llm(messages)
-        raw_content = response.choices[0].message.content
+        raw_content = llm_provider.chat(messages)
 
         # Strip model artefacts and convert to Traditional Chinese
         raw_content = re.sub(

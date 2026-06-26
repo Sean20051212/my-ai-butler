@@ -7,6 +7,9 @@ load_dotenv()
 # Absolute path of the project root (stable across --reload restarts)
 PROJECT_DIR = Path(__file__).parent.parent.resolve()
 
+# --- LLM provider selection ---
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+
 # --- Ollama ---
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 CHAT_MODEL      = os.getenv("CHAT_MODEL",      "qwen2.5:7b")

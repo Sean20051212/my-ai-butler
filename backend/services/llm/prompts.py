@@ -1,15 +1,12 @@
-from openai import OpenAI
-from backend.config import OLLAMA_BASE_URL, CHAT_MODEL
 from backend.models.character import CharacterState
-
-# Module-level client (re-used across requests)
-_client = OpenAI(
-    base_url=f"{OLLAMA_BASE_URL}/v1",
-    api_key="ollama",
-)
 
 
 def get_dynamic_system_prompt(state: CharacterState) -> str:
+    """Build the role-card system prompt from the current character state.
+
+    Provider-agnostic: the same prompt is fed to whichever LLM backend the
+    factory selects.
+    """
     trust_desc  = "對主人還有些警戒，保持距離感" if state.trust_level  < 50 else "已經非常信任主人，會流露真實的情感"
     stress_desc = "感到放鬆且安全"               if state.stress_level < 50 else "覺得壓力很大、有點煩躁"
     energy_desc = "精神飽滿"                     if state.energy_level > 50 else "非常疲倦、很想睡覺"
@@ -42,13 +39,3 @@ def get_dynamic_system_prompt(state: CharacterState) -> str:
 必須嚴格回傳以下 JSON，欄位順序不可更改，全部填寫：
 {{"reply": "妳說出口的話（必填，不可空白）", "emotion": "neutral/happy/angry/sad/surprised/shy 其中一個", "inner_thought": "妳的內心想法"}}
 """
-
-
-def call_llm(messages: list) -> object:
-    """Send messages to the LLM and return the raw completion object."""
-    return _client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=messages,
-        response_format={"type": "json_object"},
-        temperature=0.4,
-    )

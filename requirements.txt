@@ -27,3 +27,8 @@ python-dotenv
 # Long-term memory (optional — enable by setting OBSIDIAN_VAULT_PATH in .env)
 # Also requires: ollama pull nomic-embed-text
 chromadb
+
+# Testing
+pytest
+pytest-asyncio
+httpx

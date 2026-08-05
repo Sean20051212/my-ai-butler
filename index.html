@@ -6,7 +6,7 @@
     <style>
         body { margin: 0; background: transparent; overflow: hidden; font-family: "Microsoft JhengHei", sans-serif; }
         canvas { display: block; width: 100vw; height: 100vh; position: absolute; z-index: 1; }
-        #drag-zone { position: absolute; top: 0; left: 0; width: 100vw; height: calc(100vh - 100px); z-index: 5; -webkit-app-region: drag; }
+        #drag-zone { position: absolute; top: 0; left: 0; width: 100vw; height: calc(100vh - 100px); z-index: 5; cursor: move; }
         #chat-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 80%; }
         #dialogue-box { background: rgba(0, 0, 0, 0.6); color: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; width: 100%; text-align: center; font-size: 16px; display: none; text-shadow: 1px 1px 2px black; }
         #input-area { display: flex; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
@@ -86,15 +86,42 @@
                 live2dModel = await Live2DModel.from(modelPath);
                 app.stage.addChild(live2dModel);
 
-                // 徹底關閉模型的滑鼠互動與視線追蹤（引擎若無此屬性則略過）
+                // 關掉引擎內建的滑鼠追蹤（座標有 bug、又被拖曳區擋住），改用下方 IPC 版
                 try { live2dModel.autoInteract = false; } catch (e) {}
+                try { live2dModel.eventMode = 'none'; live2dModel.interactive = false; } catch (e) {}
 
                 // 完整入鏡（fit-to-view），確保臉不會被切掉
                 applyCamera();
                 window.addEventListener('resize', applyCamera);
 
-                // 凝視方向（可用 Console 的 lookAt(nx, ny) 即時調整）
-                window.lookAt(gaze.nx, gaze.ny);
+                // Ctrl+滾輪 縮放視窗（交給 main process 做 setSize）
+                window.addEventListener('wheel', (e) => {
+                    if (!e.ctrlKey) return;
+                    e.preventDefault();
+                    const factor = e.deltaY < 0 ? 1.05 : 0.95;
+                    try { require('electron').ipcRenderer.send('resize-window', factor); } catch (err) {}
+                }, { passive: false });
+
+                // 手動拖曳視窗：在拖曳區按下左鍵 → 交給 main 跟著游標移動視窗
+                const dragZone = document.getElementById('drag-zone');
+                if (dragZone) {
+                    dragZone.addEventListener('mousedown', (e) => {
+                        if (e.button !== 0) return;
+                        try { require('electron').ipcRenderer.send('drag-start'); } catch (err) {}
+                    });
+                    window.addEventListener('mouseup', () => {
+                        try { require('electron').ipcRenderer.send('drag-end'); } catch (err) {}
+                    });
+                }
+
+                // 視線追隨滑鼠：main process 每 33ms 送來「游標相對視窗的正規化座標」，
+                // 餵給 focusController。這樣即使滑鼠在拖曳區或視窗外也能正確追蹤。
+                try {
+                    require('electron').ipcRenderer.on('cursor', (_e, p) => {
+                        const fc = live2dModel && live2dModel.internalModel && live2dModel.internalModel.focusController;
+                        if (fc) fc.focus(Math.max(-1, Math.min(1, p.nx)), Math.max(-1, Math.min(1, p.ny)));
+                    });
+                } catch (e) { console.warn('游標 IPC 追蹤不可用:', e && e.message); }
 
             } catch (e) {
                 console.error("模型加載失敗:", e);

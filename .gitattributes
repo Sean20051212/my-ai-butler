@@ -1,0 +1,11 @@
+# WSL-executed scripts must keep LF endings (run under Linux python/bash)
+tts_service/*.sh text eol=lf
+tts_service/*.py text eol=lf
+
+# Windows batch stays CRLF
+*.bat text eol=crlf
+
+# Binary assets (never touch line endings)
+*.moc3 binary
+*.png binary
+*.wav binary

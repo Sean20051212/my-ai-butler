@@ -4,18 +4,19 @@
 
 ## 本地端環境
 
-- 本地端只需要 Ollama（LLM 與 VLM 推論），不需要額外管理 PyTorch/CUDA 環境。
-- TTS 已改為雲端語音克隆服務，語音合成不再佔用本地 VRAM。
+- 本地端需要 Ollama（LLM 與 VLM 推論），不需要額外管理 PyTorch/CUDA 環境。
+- TTS 採本地 CosyVoice2 微調語音（芙卡洛斯／芙寧娜聲線），跑在 WSL2 的 `cosyvoice` conda 環境，透過常駐 HTTP 服務對外提供；佔用約 2.4GB VRAM，與 Ollama `qwen2.5:7b` 可同時共用 16GB 顯卡。
 
 ## 系統架構
 
 採用本地與雲端混合的微服務架構，`services/` 下的 LLM、TTS、Vision 各自為可插拔的 provider 抽象層（`abc.ABC` 基底類別 + factory 依環境變數選擇實作）。
 
-### 語音合成（雲端）
+### 語音合成（本地 CosyVoice2）
 
-- 改接雲端語音克隆服務（廠商未定，先以 `BaseTTSProvider` + `CloudTTSProvider` 骨架保留擴充點）。
-- 候選方案：ElevenLabs / Azure Speech / PlayHT，皆支援聲音克隆與多語言。
-- provider 未實作時，TTS 快取層會優雅回傳 `None`，對話流程不中斷、只是沒有語音。
+- 使用微調完成的 `CosyVoice2-0.5B-fukalos-final` 模型（芙卡洛斯／芙寧娜聲線），以 zero-shot 方式合成。
+- 模型跑在 WSL2 的 `cosyvoice` conda 環境（PyTorch nightly，配合 RTX 5070 Ti），由 `tts_service/butler_tts_server.py`（純標準庫 `http.server`）常駐載入一次、對外提供 `POST /tts` 與 `GET /health`。
+- Windows 後端的 `CosyVoiceTTSProvider`（`TTS_PROVIDER=cosyvoice`）負責把回覆文字繁→簡（`tw2sp`）後 HTTP 呼叫該服務取回 WAV；`start.bat` 會自動先把 WSL 服務帶起來並健康檢查。
+- `CloudTTSProvider` 骨架保留，未實作時 TTS 快取層優雅回傳 `None`，對話流程不中斷、只是沒有語音；WSL 服務未啟動時亦同（provider 連線失敗回 `None`）。
 
 ### LLM 與記憶（混合）
 
@@ -37,7 +38,7 @@ VLM 延遲與資源開銷較高，僅作為最後手段。
 
 ### TTS 文字前處理
 
-LLM 輸出包含過長段落、英文或特殊符號時，會造成 TTS 漏字或中斷。文字進入 TTS 前須經過（`utils/text.py` 的 `preprocess_for_tts()`，雲端 TTS 同樣適用）：
+LLM 輸出包含過長段落、英文或特殊符號時，會造成 TTS 漏字或中斷。文字進入 TTS 前須經過（`utils/text.py` 的 `preprocess_for_tts()`）：
 
 - 英文轉中文拼音替換
 - 生僻字過濾
@@ -52,11 +53,12 @@ LLM 輸出包含過長段落、英文或特殊符號時，會造成 TTS 漏字�
 
 ## 待辦事項
 
-### 階段一：雲端 TTS 串接
+### 階段一：本地 CosyVoice2 TTS 串接
 
-- [ ] 決定雲端語音克隆廠商（ElevenLabs / Azure Speech / PlayHT）
-- [ ] 在 `CloudTTSProvider.synthesize()` 實作 API 呼叫，API key 透過環境變數管理
-- [ ] 準備聲音克隆所需的乾淨人聲樣本（不含歌唱、背景音樂或殘響）
+- [x] 微調 `CosyVoice2-0.5B-fukalos-final` 芙卡洛斯／芙寧娜聲線（詳見 `HANDOFF.md`）
+- [x] WSL 常駐推論服務 `tts_service/butler_tts_server.py`（載入模型一次、`/tts` + `/health`）
+- [x] Windows 後端 `CosyVoiceTTSProvider`（繁→簡 + HTTP）串接、`start.bat` 自動啟動 WSL 服務
+- [ ] 延遲優化：用 `add_zero_shot_spk` 預先快取 prompt 音檔，縮短單句合成時間（目前約 13-15s）
 
 ### 階段二：LLM 邏輯與文字前處理
 
@@ -67,4 +69,4 @@ LLM 輸出包含過長段落、英文或特殊符號時，會造成 TTS 漏字�
 ### 階段三：多模態整合
 
 - [x] 實作 HTML DOM / 無障礙樹 / VLM 多層次擷取
-- [ ] 將 LLM 串流輸出接入文字切片器，再送入雲端 TTS 進行即時語音合成
+- [ ] 將 LLM 串流輸出接入文字切片器，再送入 CosyVoice TTS 進行即時語音合成

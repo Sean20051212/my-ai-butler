@@ -1,10 +1,12 @@
 from backend.config import TTS_PROVIDER
 from backend.services.tts.base import BaseTTSProvider
 from backend.services.tts.providers.cloud_provider import CloudTTSProvider
+from backend.services.tts.providers.cosyvoice_provider import CosyVoiceTTSProvider
 
 # Registry of known TTS providers, keyed by the TTS_PROVIDER env value.
 _PROVIDERS: dict[str, type[BaseTTSProvider]] = {
     "cloud": CloudTTSProvider,
+    "cosyvoice": CosyVoiceTTSProvider,
 }
 
 

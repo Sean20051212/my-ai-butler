@@ -24,6 +24,8 @@ VISION_CACHE_TTL = float(os.getenv("VISION_CACHE_TTL", "5"))
 
 # --- TTS ---
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "cloud")
+# CosyVoice2 fukalos inference server (runs in WSL cosyvoice conda env).
+COSYVOICE_TTS_URL = os.getenv("COSYVOICE_TTS_URL", "http://localhost:9880/tts")
 
 # --- Audio cache ---
 AUDIO_CACHE_DIR = Path(os.getenv("AUDIO_CACHE_DIR", str(PROJECT_DIR / "cache" / "audio")))

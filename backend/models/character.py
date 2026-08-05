@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CharacterState:
-    """Mutable runtime state for the Hiyori character."""
+    """Mutable runtime state for the Furina character."""
     trust_level:   int  = 45
     stress_level:  int  = 20
     energy_level:  int  = 80

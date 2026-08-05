@@ -15,4 +15,8 @@ sleep 1
 
 # 以本腳本所在目錄定位 server，不受呼叫時 cwd 影響
 DIR="$(cd "$(dirname "$0")" && pwd)"
-exec python "$DIR/butler_tts_server.py"
+
+# 同時輸出到終端機與 log 檔，方便服務若中途死掉時回頭查原因
+LOG="/tmp/butler_tts.log"
+echo "=== butler TTS server start $(date) ===" >> "$LOG"
+python "$DIR/butler_tts_server.py" 2>&1 | tee -a "$LOG"

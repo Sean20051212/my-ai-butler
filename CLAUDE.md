@@ -11,6 +11,14 @@
 
 採用本地與雲端混合的微服務架構，`services/` 下的 LLM、TTS、Vision 各自為可插拔的 provider 抽象層（`abc.ABC` 基底類別 + factory 依環境變數選擇實作）。
 
+### 前端與 Live2D（Electron 桌寵）
+
+- 前端為 Electron 視窗（`main.js` + `index.html`），透過 HTTP 呼叫後端 `/chat`。
+- Live2D 角色為芙寧娜，模型在 `model/Furina/`（VTS 版、檔名已 ASCII 正規化，`model3.json` 接了 happy/sad/surprised 三個表情）。
+- 渲染 runtime 是 **PixiJS v8 + `untitled-pixi-live2d-engine`（`live2d-engine.min.js`，底層為官方 Cubism 5 SDK）**。**不可換回 guansss 的 `pixi-live2d-display`**：芙寧娜模型有網格用到 20+ 個裁切遮罩，超過該庫寫死的 16 上限會渲染崩潰（`not supported mask count`）；此引擎會自動啟用 high-precision mask 才能顯示。
+- 對嘴用引擎的 `model.speak(blobURL)`（需 `pixi-sound.min.js`），會在正確時機驅動 `ParamMouthOpenY`；不要用自寫的每幀 `setParameterValueById`，會被 update 蓋掉。
+- 鏡頭與凝視是可即時調的參數：Console 可呼叫 `frameModel({zoom,x,y})` 與 `lookAt(nx,ny)`（凝視走 `focusController` 正規化座標，與視窗大小無關）。預設鏡頭為上半身特寫、凝視 (0,0) 正前方。
+
 ### 語音合成（本地 CosyVoice2）
 
 - 使用微調完成的 `CosyVoice2-0.5B-fukalos-final` 模型（芙卡洛斯／芙寧娜聲線），以 zero-shot 方式合成。

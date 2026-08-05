@@ -9,3 +9,6 @@ tts_service/*.py text eol=lf
 *.moc3 binary
 *.png binary
 *.wav binary
+
+# Vendored minified libs: keep as-is, don't diff or convert line endings
+*.min.js binary

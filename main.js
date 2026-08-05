@@ -2,15 +2,15 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 function createWindow () {
   const win = new BrowserWindow({
-    width: 400,
-    height: 600,
+    width: 500,
+    height: 800,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     hasShadow: false,
-    resizable: false,       
-    maximizable: false,     
-    fullscreenable: false,  
+    resizable: true,        // 除錯期間允許調整視窗大小，方便觀察模型
+    maximizable: false,
+    fullscreenable: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false, 
@@ -18,7 +18,6 @@ function createWindow () {
     }
   });
   win.loadFile('index.html');
-  
 }
 
 app.commandLine.appendSwitch('log-level', '3');

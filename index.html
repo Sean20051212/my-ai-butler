@@ -18,9 +18,10 @@
 <body>
     <div id="drag-zone"></div>
     
-    <script src="pixi.min.js"></script>
+    <script src="pixi.v8.min.js"></script>
+    <script src="pixi-sound.min.js"></script>
     <script src="live2dcubismcore.min.js"></script>
-    <script src="cubism4.min.js"></script>
+    <script src="live2d-engine.min.js"></script>
     
     <div id="chat-container">
         <div id="dialogue-box"></div>
@@ -34,29 +35,71 @@
         const Live2DModel = window.PIXI?.live2d?.Live2DModel || window.Live2DModel;
         let live2dModel = null;
 
+        // 可即時調整的鏡頭參數。zoom：相對「完整入鏡」的倍數（1=整個模型剛好入鏡，
+        // 放大看臉可用 2~3）；x/y：模型在畫面上的位置(0..1)。
+        // 除錯時可在 DevTools Console 直接呼叫：frameModel({ zoom: 2.5, y: 0.9 })
+        let fitScale = 1;
+        const camera = { zoom: 2.5, x: 0.5, y: 1 };   // 日常預設：上半身特寫
+
+        function applyCamera() {
+            if (!live2dModel) return;
+            live2dModel.anchor.set(0.5, 0.5);
+            live2dModel.scale.set(1);
+            fitScale = Math.min(window.innerWidth / live2dModel.width,
+                                window.innerHeight / live2dModel.height) * 0.95;
+            live2dModel.scale.set(fitScale * camera.zoom);
+            live2dModel.x = window.innerWidth * camera.x;
+            live2dModel.y = window.innerHeight * camera.y;
+        }
+        window.frameModel = (opts = {}) => {
+            Object.assign(camera, opts);
+            applyCamera();
+            console.log('camera=', JSON.stringify(camera));
+        };
+
+        // 凝視方向，直接餵 focusController 的正規化座標 [-1,1]，與視窗大小/位置無關。
+        // (0,0)=中性；nx 正=右、ny 正=下。除錯時可在 Console 呼叫：lookAt(0.3, 0.2)
+        const gaze = { nx: 0, ny: 0 };
+        window.lookAt = (nx = 0, ny = 0) => {
+            gaze.nx = nx; gaze.ny = ny;
+            const fc = live2dModel && live2dModel.internalModel && live2dModel.internalModel.focusController;
+            if (!fc || typeof fc.focus !== 'function') {
+                console.warn('focusController.focus 不存在，無法調整凝視');
+                return;
+            }
+            fc.focus(nx, ny);
+            console.log('gaze=', JSON.stringify(gaze));
+        };
+
         async function init() {
             if (!Live2DModel) return;
 
-            const app = new PIXI.Application({
-                autoStart: true, resizeTo: window, backgroundAlpha: 0, antialias: true
-            });
-            document.body.appendChild(app.view);
+            // PixiJS v8: Application options go to init(), which is async.
+            const app = new PIXI.Application();
+            await app.init({ resizeTo: window, backgroundAlpha: 0, antialias: true });
+            document.body.appendChild(app.canvas);
 
             try {
+                // untitled-pixi-live2d-engine auto-enables high-precision masks,
+                // so this Cubism 5 model's 20+ clipping masks render correctly.
                 const modelPath = "./model/Furina/furina.model3.json";
                 live2dModel = await Live2DModel.from(modelPath);
                 app.stage.addChild(live2dModel);
-                live2dModel.anchor.set(0.5, 0.5); 
-                live2dModel.x = window.innerWidth / 2;
-                live2dModel.y = window.innerHeight / 2;
-                let currentScale = (window.innerHeight * 0.8) / live2dModel.height;
-                live2dModel.scale.set(currentScale);
-                
-                // 🌟 核心防護：徹底關閉模型的滑鼠互動與視線追蹤
-                live2dModel.autoInteract = false;
+
+                // 徹底關閉模型的滑鼠互動與視線追蹤（引擎若無此屬性則略過）
+                try { live2dModel.autoInteract = false; } catch (e) {}
+
+                // 完整入鏡（fit-to-view），確保臉不會被切掉
+                applyCamera();
+                window.addEventListener('resize', applyCamera);
+
+                // 凝視方向（可用 Console 的 lookAt(nx, ny) 即時調整）
+                window.lookAt(gaze.nx, gaze.ny);
 
             } catch (e) {
                 console.error("模型加載失敗:", e);
+                dialogBox.style.display = 'block';
+                dialogBox.innerText = "模型載入失敗：" + (e && e.stack ? e.stack : (e && e.message ? e.message : e));
             }
         }
         
@@ -64,49 +107,27 @@
         const sendBtn = document.getElementById('send-btn');
         const dialogBox = document.getElementById('dialogue-box');
 
-        let audioCtx = null;
+        let currentAudioUrl = null;
 
-        function setMouth(value) {
-            if (live2dModel)
-                live2dModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', value);
-        }
-
-        async function playWithLipSync(base64Wav) {
-            if (!audioCtx) audioCtx = new AudioContext();
-            if (audioCtx.state === 'suspended') await audioCtx.resume();
+        // 用引擎內建的 speak() 播放語音並自動對嘴（會在正確時機驅動
+        // model3.json 的 LipSync 群組 → ParamMouthOpenY，避免被每幀 update 蓋掉）。
+        // 需要 @pixi/sound 已載入。
+        function playVoice(base64Wav) {
+            if (!live2dModel || typeof live2dModel.speak !== 'function') return;
 
             const binary = atob(base64Wav);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const blob = new Blob([bytes], { type: 'audio/wav' });
 
-            const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-            const source = audioCtx.createBufferSource();
-            source.buffer = audioBuffer;
+            if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+            currentAudioUrl = URL.createObjectURL(blob);
 
-            const analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            analyser.connect(audioCtx.destination);
-
-            const freqData = new Uint8Array(analyser.frequencyBinCount);
-            let rafId;
-
-            function updateMouth() {
-                analyser.getByteFrequencyData(freqData);
-                // 取低頻段（語音能量集中在前 1/4 頻段）
-                const voiceBand = freqData.slice(0, freqData.length >> 2);
-                const avg = voiceBand.reduce((a, b) => a + b, 0) / voiceBand.length;
-                setMouth(Math.min(1, avg / 80));
-                rafId = requestAnimationFrame(updateMouth);
-            }
-
-            source.onended = () => {
-                cancelAnimationFrame(rafId);
-                setMouth(0);
-            };
-
-            source.start();
-            updateMouth();
+            live2dModel.speak(currentAudioUrl, {
+                volume: 1.0,
+                onFinish: () => { if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; } },
+                onError: (e) => console.warn("speak 失敗:", e),
+            });
         }
 
         async function sendMessage() {
@@ -135,9 +156,7 @@
                 triggerEmotionAction(data.emotion);
 
                 if (data.audio_base64 && live2dModel) {
-                    playWithLipSync(data.audio_base64).catch(e => {
-                        console.warn("語音播放失敗:", e);
-                    });
+                    playVoice(data.audio_base64);
                 }
 
             } catch (error) {

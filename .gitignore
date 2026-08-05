@@ -24,6 +24,9 @@ SoVITS_weights/
 GPT_weights/
 pretrained_models/
 
+# Live2D 模型資產（大型二進位，如 91MB 的 .moc3；本機保留、另行取得，不進 repo）
+model/
+
 # 向量資料庫（ChromaDB / FAISS）
 chroma_db/
 data/chroma/

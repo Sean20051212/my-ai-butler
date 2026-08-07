@@ -223,11 +223,18 @@
             const url = URL.createObjectURL(blob);
             currentAudioUrl = url;
 
-            live2dModel.speak(url, {
-                volume: 1.0,
-                onFinish: () => { URL.revokeObjectURL(url); if (currentAudioUrl === url) currentAudioUrl = null; onDone(); },
-                onError: (e) => { console.warn('speak 失敗:', e); URL.revokeObjectURL(url); onDone(); },
-            });
+            try {
+                live2dModel.speak(url, {
+                    volume: 1.0,
+                    onFinish: () => { URL.revokeObjectURL(url); if (currentAudioUrl === url) currentAudioUrl = null; onDone(); },
+                    onError: (e) => { console.warn('speak 失敗:', e); URL.revokeObjectURL(url); onDone(); },
+                });
+            } catch (err) {
+                // speak() 偶爾會同步丟例外（音檔解碼失敗等）；別讓佇列卡死。
+                console.error('speak() 例外:', err);
+                URL.revokeObjectURL(url);
+                onDone();
+            }
         }
 
         function stopAllAudio() {

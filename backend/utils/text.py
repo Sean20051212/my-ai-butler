@@ -24,6 +24,10 @@ def preprocess_for_tts(text: str) -> str:
     text = re.sub(r'\[(.+?)\]\(.*?\)', r'\1', text)
     text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
 
+    # 1b. Drop parenthetical stage directions like （沉默了一下）or (笑) — these
+    #     are narration, not speech, and must not be read aloud. Non-nested only.
+    text = re.sub(r'[（(][^（(）)]*[）)]', '', text)
+
     # 2. Keep CJK, kana, safe punctuation, digits, ASCII letters and latin
     #    joiners; replace anything else (emoji, rare symbols) with '，'
     filtered = []

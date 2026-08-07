@@ -296,6 +296,9 @@
                 return;
             }
             resumeAudioContext();  // 趁點擊手勢順便解鎖播放用的音訊環境
+            // 一開口就打斷她：停掉正在播的語音，並取消後端還在跑的那一輪。
+            stopAllAudio();
+            try { ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) {}
             try {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } catch (e) {

@@ -67,7 +67,9 @@ async def run_turn(message: str, state, memory) -> dict:
         result     = json.loads(raw_content)
         reply_text = result.get("reply", "").strip()
         if not reply_text:
-            reply_text      = "嗯...（沉默了一下）"
+            # Clean, speakable fallback: no parenthetical stage direction (which
+            # TTS would either read aloud or choke on into a short screech).
+            reply_text      = "嗯……讓我想一下。"
             result["reply"] = reply_text
 
         # ── State updates ──────────────────────────────────────────────

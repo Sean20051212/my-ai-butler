@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,25 +16,31 @@ def client(monkeypatch):
 
 def test_chat_returns_reply(client, monkeypatch):
     monkeypatch.setattr(
-        convo_mod.llm_provider,
-        "chat",
-        lambda messages: json.dumps(
-            {"reply": "哈囉主人", "emotion": "happy", "inner_thought": "開心"}
-        ),
+        convo_mod.llm_provider, "chat", lambda messages: "[happy]哈囉主人"
     )
     resp = client.post("/chat", json={"message": "早安"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["reply"] == "哈囉主人"
+    assert body["emotion"] == "happy"
 
 
-def test_chat_malformed_json_falls_back(client, monkeypatch):
-    # LLM returns something that is not valid JSON.
+def test_chat_untagged_reply_defaults_neutral(client, monkeypatch):
+    # No emotion tag → keep the whole text, default to neutral (not an error).
     monkeypatch.setattr(
-        convo_mod.llm_provider, "chat", lambda messages: "這不是 JSON"
+        convo_mod.llm_provider, "chat", lambda messages: "沒有標記的一句話"
     )
     resp = client.post("/chat", json={"message": "早安"})
     assert resp.status_code == 200
     body = resp.json()
-    # Should degrade to the fallback reply rather than erroring out.
-    assert "reply" in body and body["reply"]
+    assert body["reply"] == "沒有標記的一句話"
+    assert body["emotion"] == "neutral"
+
+
+def test_chat_empty_reply_falls_back(client, monkeypatch):
+    # Model produced only a tag / nothing speakable → safe fallback reply.
+    monkeypatch.setattr(convo_mod.llm_provider, "chat", lambda messages: "[happy]")
+    resp = client.post("/chat", json={"message": "早安"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reply"]  # non-empty fallback

@@ -10,11 +10,11 @@ and shared across transports; tests monkeypatch them here.
 
 import asyncio
 import base64
-import json
 import re
 import time
 
 from backend.services.llm import get_dynamic_system_prompt, get_llm_provider
+from backend.services.llm.parsing import parse_emotion_tag
 from backend.services.tts import TTSCache, get_tts_provider
 from backend.services.vision import get_vision_chain
 from backend.utils.text import converter
@@ -64,27 +64,29 @@ async def run_turn(message: str, state, memory) -> dict:
         raw_content = _ARTIFACT_RE.sub("", raw_content)
         raw_content = converter.convert(raw_content)
 
-        result     = json.loads(raw_content)
-        reply_text = result.get("reply", "").strip()
+        # New format: "[emotion]spoken text" (no JSON). Parsing is forgiving —
+        # a missing/unknown tag falls back to neutral with the text intact.
+        emotion, reply_text = parse_emotion_tag(raw_content)
+        reply_text = reply_text.strip()
         if not reply_text:
-            # Diagnostic (only on the failure case): shows what the model put in
-            # the other fields when it left reply empty, so we can tell whether
-            # the content leaked into inner_thought vs. a truly empty response.
-            print(f"[空回覆] LLM 回傳：{result}")
+            # Diagnostic on the failure case: show the model's raw output so we
+            # can tell an empty response from a formatting slip.
+            print(f"[空回覆] LLM 原始輸出：{raw_content!r}")
             # Clean, speakable fallback: no parenthetical stage direction (which
             # TTS would either read aloud or choke on into a short screech).
-            reply_text      = "嗯……讓我想一下。"
-            result["reply"] = reply_text
+            reply_text = "嗯……讓我想一下。"
+
+        result = {"reply": reply_text, "emotion": emotion}
 
         # ── State updates ──────────────────────────────────────────────
         state.add_to_history(message, reply_text)
-        state.apply_emotion(result.get("emotion", "neutral"))
+        state.apply_emotion(emotion)
 
         elapsed = time.time() - start_time
         print(f"\n{'='*40}")
         print(f"Thinking: {elapsed:.2f}s")
         print(f"Vision:   {state.latest_vision}")
-        print(f"Thought:  {result.get('inner_thought', '')}")
+        print(f"Emotion:  {emotion}")
         print(f"Reply:    {reply_text}")
         print(f"{'='*40}\n")
 

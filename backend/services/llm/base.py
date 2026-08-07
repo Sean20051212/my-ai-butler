@@ -19,3 +19,14 @@ class BaseLLMProvider(abc.ABC):
         (``[{"role": ..., "content": ...}, ...]``).
         """
         raise NotImplementedError
+
+    def chat_stream(self, messages: list):
+        """Return an async iterator yielding reply text chunks as they arrive.
+
+        Optional: only providers that support token streaming override this.
+        The default signals "not supported" so the caller can fall back to the
+        blocking ``chat`` path.  Overrides must be ``async def`` generators.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} 不支援串流輸出（chat_stream）"
+        )

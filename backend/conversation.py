@@ -67,6 +67,10 @@ async def run_turn(message: str, state, memory) -> dict:
         result     = json.loads(raw_content)
         reply_text = result.get("reply", "").strip()
         if not reply_text:
+            # Diagnostic (only on the failure case): shows what the model put in
+            # the other fields when it left reply empty, so we can tell whether
+            # the content leaked into inner_thought vs. a truly empty response.
+            print(f"[空回覆] LLM 回傳：{result}")
             # Clean, speakable fallback: no parenthetical stage direction (which
             # TTS would either read aloud or choke on into a short screech).
             reply_text      = "嗯……讓我想一下。"

@@ -5,6 +5,9 @@
 # Web framework
 fastapi
 uvicorn[standard]
+# WebSocket transport (/ws). Listed explicitly because the uvicorn[standard]
+# extra doesn't always resolve on some installs, and /ws hard-depends on it.
+websockets
 
 # LLM clients
 openai

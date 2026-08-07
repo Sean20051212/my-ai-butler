@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.models.character import CharacterState
 from backend.routes.chat import router as chat_router
+from backend.routes.ws import router as ws_router
 from backend.services.memory import MemoryService
 
 
@@ -30,3 +31,4 @@ app.add_middleware(
 )
 
 app.include_router(chat_router)
+app.include_router(ws_router)

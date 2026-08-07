@@ -58,6 +58,11 @@ class WhisperSTTProvider(BaseSTTProvider):
             io.BytesIO(audio),
             language=self._language,
             beam_size=5,
+            # Silero VAD strips non-speech before transcription. Without it,
+            # Whisper hallucinates on silence — typically YouTube-subtitle
+            # credits ("字幕by…", "謝謝觀看") baked into its training data. With
+            # it, pressing the mic without speaking yields an empty string.
+            vad_filter=True,
         )
         # segments is a generator; joining consumes it and runs the decode.
         return "".join(segment.text for segment in segments).strip()

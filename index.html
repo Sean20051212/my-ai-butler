@@ -136,62 +136,123 @@
 
         let currentAudioUrl = null;
 
-        // 用引擎內建的 speak() 播放語音並自動對嘴（會在正確時機驅動
+        // ── WebSocket 傳輸 ──────────────────────────────────────────────
+        // 取代原本一次性的 POST /chat。持久連線才能做「串流多段語音」與
+        // 「講話中被打斷」。斷線會自動重連。
+        const WS_URL = 'ws://127.0.0.1:8000/ws';
+        let ws = null;
+        let wsReady = false;
+
+        function connectWS() {
+            ws = new WebSocket(WS_URL);
+            ws.onopen = () => { wsReady = true; console.log('WS 已連線'); };
+            ws.onclose = () => { wsReady = false; setTimeout(connectWS, 1000); };
+            ws.onerror = (e) => console.warn('WS 錯誤:', e);
+            ws.onmessage = (ev) => {
+                let msg;
+                try { msg = JSON.parse(ev.data); } catch (e) { return; }
+                handleServerMessage(msg);
+            };
+        }
+
+        function handleServerMessage(msg) {
+            switch (msg.type) {
+                case 'transcript':               // 語音輸入的逐字稿（階段五才會用到）
+                    if (msg.text) inputField.value = msg.text;
+                    break;
+                case 'reply':
+                    dialogBox.style.display = 'block';
+                    dialogBox.innerText = msg.text || '（沉默）';
+                    triggerEmotionAction(msg.emotion);
+                    break;
+                case 'audio':
+                    enqueueAudio(msg);
+                    break;
+                case 'turn_end':
+                    sendBtn.disabled = false;
+                    break;
+                case 'stopped':                  // 被打斷：清掉還沒播的語音
+                    stopAllAudio();
+                    sendBtn.disabled = false;
+                    break;
+            }
+        }
+
+        // ── 語音播放佇列：嚴格依 seq 順序播放 ──────────────────────────
+        // 後端目前只送一段（seq 0），但任務八會平行合成、依序送多段；佇列
+        // 依 seq 排序、缺號時等待，確保句子 2 一定在句子 3 之前播出。
+        const audioQueue = [];    // 待播的 {seq, base64}
+        let expectedSeq = 0;      // 下一個該播的 seq
+        let playing = false;
+
+        function resetAudioQueue() {
+            audioQueue.length = 0;
+            expectedSeq = 0;
+            playing = false;
+        }
+
+        function enqueueAudio(msg) {
+            audioQueue.push(msg);
+            audioQueue.sort((a, b) => a.seq - b.seq);
+            pumpAudio();
+        }
+
+        function pumpAudio() {
+            if (playing) return;
+            const next = audioQueue[0];
+            if (!next || next.seq !== expectedSeq) return;  // 等缺號的那段到齊
+            audioQueue.shift();
+            playing = true;
+            playSegment(next.base64, () => {
+                playing = false;
+                expectedSeq += 1;
+                pumpAudio();
+            });
+        }
+
+        // 用引擎內建的 speak() 播放單段語音並自動對嘴（會在正確時機驅動
         // model3.json 的 LipSync 群組 → ParamMouthOpenY，避免被每幀 update 蓋掉）。
         // 需要 @pixi/sound 已載入。
-        function playVoice(base64Wav) {
-            if (!live2dModel || typeof live2dModel.speak !== 'function') return;
+        function playSegment(base64Wav, onDone) {
+            if (!live2dModel || typeof live2dModel.speak !== 'function') { onDone(); return; }
 
             const binary = atob(base64Wav);
             const bytes = new Uint8Array(binary.length);
             for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             const blob = new Blob([bytes], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            currentAudioUrl = url;
 
-            if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
-            currentAudioUrl = URL.createObjectURL(blob);
-
-            live2dModel.speak(currentAudioUrl, {
+            live2dModel.speak(url, {
                 volume: 1.0,
-                onFinish: () => { if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; } },
-                onError: (e) => console.warn("speak 失敗:", e),
+                onFinish: () => { URL.revokeObjectURL(url); if (currentAudioUrl === url) currentAudioUrl = null; onDone(); },
+                onError: (e) => { console.warn('speak 失敗:', e); URL.revokeObjectURL(url); onDone(); },
             });
         }
 
-        async function sendMessage() {
+        function stopAllAudio() {
+            resetAudioQueue();
+            try { if (live2dModel && typeof live2dModel.stopSpeaking === 'function') live2dModel.stopSpeaking(); } catch (e) {}
+            if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
+        }
+
+        function sendMessage() {
             const text = inputField.value.trim();
             if (!text) return;
+
+            if (!wsReady) {
+                dialogBox.style.display = 'block';
+                dialogBox.innerText = '連線中…請確認後端有在執行';
+                return;
+            }
 
             inputField.value = '';
             sendBtn.disabled = true;
             dialogBox.style.display = 'block';
-            dialogBox.innerText = "思考中...";
+            dialogBox.innerText = '思考中...';
 
-            try {
-                const response = await fetch('http://127.0.0.1:8000/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`伺服器錯誤 ${response.status}`);
-                }
-
-                const data = await response.json();
-
-                dialogBox.innerText = data.reply || "（沉默）";
-                triggerEmotionAction(data.emotion);
-
-                if (data.audio_base64 && live2dModel) {
-                    playVoice(data.audio_base64);
-                }
-
-            } catch (error) {
-                console.error("發送失敗:", error);
-                dialogBox.innerText = "連不上後端，請確認 server.py 有在執行。";
-            } finally {
-                sendBtn.disabled = false;
-            }
+            stopAllAudio();  // 開始新一輪，先清掉上一輪殘留的語音
+            ws.send(JSON.stringify({ type: 'text', text }));
         }
         
         function triggerEmotionAction(emotion) {
@@ -219,7 +280,7 @@
             if (e.key === 'Enter') sendMessage();
         });
 
-        window.onload = init;
+        window.onload = () => { init(); connectWS(); };
     </script>
 </body>
 </html>

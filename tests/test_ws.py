@@ -63,6 +63,42 @@ def test_ws_blank_text_ignored(client, monkeypatch):
         assert ws.receive_json()["type"] == "reply"
 
 
+def test_ws_audio_transcribes_then_runs_turn(client, monkeypatch):
+    monkeypatch.setattr(ws_mod.stt_provider, "transcribe", lambda audio: "今天天氣如何")
+
+    async def fake_run_turn(message, state, memory):
+        assert message == "今天天氣如何"  # the transcript drives the turn
+        return {"reply": "很好喔", "emotion": "happy"}
+
+    monkeypatch.setattr(ws_mod, "run_turn", fake_run_turn)
+
+    with client.websocket_connect("/ws") as ws:
+        ws.send_bytes(b"FAKE_WEBM_AUDIO")
+
+        transcript = ws.receive_json()
+        assert transcript["type"] == "transcript"
+        assert transcript["text"] == "今天天氣如何"
+
+        assert ws.receive_json()["type"] == "reply"
+        assert ws.receive_json()["type"] == "turn_end"
+
+
+def test_ws_silent_audio_no_turn(client, monkeypatch):
+    # STT heard nothing → emit an empty transcript and do not start a turn.
+    monkeypatch.setattr(ws_mod.stt_provider, "transcribe", lambda audio: "   ")
+
+    async def fake_run_turn(message, state, memory):  # pragma: no cover
+        raise AssertionError("run_turn must not run on silent audio")
+
+    monkeypatch.setattr(ws_mod, "run_turn", fake_run_turn)
+
+    with client.websocket_connect("/ws") as ws:
+        ws.send_bytes(b"SILENCE")
+        transcript = ws.receive_json()
+        assert transcript["type"] == "transcript"
+        assert transcript["text"] == ""
+
+
 def test_ws_interrupt_stops_turn(client, monkeypatch):
     async def slow_run_turn(message, state, memory):
         await asyncio.sleep(5)  # long enough to be interrupted mid-flight

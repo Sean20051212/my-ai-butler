@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, session } = require('electron');
 
 function createWindow () {
   const win = new BrowserWindow({
@@ -67,7 +67,14 @@ function createWindow () {
 
 app.commandLine.appendSwitch('log-level', '3');
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Grant microphone (voice input) to the renderer; deny anything else we
+  // don't use. Without this, getUserMedia() in the renderer is rejected.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media');
+  });
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -10,9 +10,13 @@
         #chat-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; flex-direction: column; align-items: center; width: 80%; }
         #dialogue-box { background: rgba(0, 0, 0, 0.6); color: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; width: 100%; text-align: center; font-size: 16px; display: none; text-shadow: 1px 1px 2px black; }
         #input-area { display: flex; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        #user-input { flex-grow: 1; padding: 10px; border-radius: 5px 0 0 5px; border: none; outline: none; background: rgba(255, 255, 255, 0.9); }
+        #user-input { flex-grow: 1; padding: 10px; border-radius: 0; border: none; outline: none; background: rgba(255, 255, 255, 0.9); }
         #send-btn { padding: 10px 20px; border: none; background: #ff7675; color: white; font-weight: bold; border-radius: 0 5px 5px 0; cursor: pointer; transition: background 0.2s; }
         #send-btn:hover { background: #d63031; }
+        #mic-btn { padding: 10px 14px; border: none; background: rgba(255,255,255,0.9); color: #333; font-size: 16px; border-radius: 5px 0 0 5px; cursor: pointer; transition: background 0.2s; }
+        #mic-btn:hover { background: #fff; }
+        #mic-btn.recording { background: #d63031; color: #fff; animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
@@ -26,6 +30,7 @@
     <div id="chat-container">
         <div id="dialogue-box"></div>
         <div id="input-area">
+            <button id="mic-btn" title="按一下開始錄音，再按一下結束並送出">🎤</button>
             <input type="text" id="user-input" placeholder="說點什麼吧..." autocomplete="off">
             <button id="send-btn">發送</button>
         </div>
@@ -132,6 +137,7 @@
         
         const inputField = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
+        const micBtn = document.getElementById('mic-btn');
         const dialogBox = document.getElementById('dialogue-box');
 
         let currentAudioUrl = null;
@@ -157,8 +163,13 @@
 
         function handleServerMessage(msg) {
             switch (msg.type) {
-                case 'transcript':               // 語音輸入的逐字稿（階段五才會用到）
-                    if (msg.text) inputField.value = msg.text;
+                case 'transcript':               // 語音輸入的辨識結果
+                    if (msg.text) {
+                        inputField.value = msg.text;  // 讓你看到辨識到什麼
+                    } else {
+                        dialogBox.style.display = 'block';
+                        dialogBox.innerText = '（沒聽清楚，再說一次？）';
+                    }
                     break;
                 case 'reply':
                     dialogBox.style.display = 'block';
@@ -266,6 +277,63 @@
         window.addEventListener('pointerdown', unlockAudioOnce);
         window.addEventListener('keydown', unlockAudioOnce);
 
+        // ── 麥克風（push-to-talk）─────────────────────────────────────
+        // 點一下開始錄音、再點一下結束並把整段錄音以 binary 送給後端做 STT。
+        let mediaRecorder = null;
+        let mediaStream = null;
+        let recordedChunks = [];
+        let recording = false;
+
+        async function toggleMic() {
+            if (recording) { stopRecording(); return; }
+            await startRecording();
+        }
+
+        async function startRecording() {
+            if (!wsReady) {
+                dialogBox.style.display = 'block';
+                dialogBox.innerText = '連線中…請確認後端有在執行';
+                return;
+            }
+            resumeAudioContext();  // 趁點擊手勢順便解鎖播放用的音訊環境
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (e) {
+                console.error('麥克風存取失敗:', e);
+                dialogBox.style.display = 'block';
+                dialogBox.innerText = '拿不到麥克風，請確認系統/應用程式的麥克風權限。';
+                return;
+            }
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(mediaStream);
+            mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) recordedChunks.push(e.data); };
+            mediaRecorder.onstop = async () => {
+                stopTracks();
+                const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                recordedChunks = [];
+                if (blob.size === 0 || !wsReady) return;
+                stopAllAudio();  // 新的一句話取代還在播的回覆
+                dialogBox.style.display = 'block';
+                dialogBox.innerText = '辨識中...';
+                ws.send(await blob.arrayBuffer());  // binary frame = 一段完整語音
+            };
+            mediaRecorder.start();
+            recording = true;
+            micBtn.classList.add('recording');
+            micBtn.textContent = '⏺';
+        }
+
+        function stopRecording() {
+            recording = false;
+            micBtn.classList.remove('recording');
+            micBtn.textContent = '🎤';
+            try { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); } catch (e) {}
+        }
+
+        function stopTracks() {
+            if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+        }
+
         function sendMessage() {
             const text = inputField.value.trim();
             if (!text) return;
@@ -307,6 +375,7 @@
         }
 
         sendBtn.addEventListener('click', sendMessage);
+        micBtn.addEventListener('click', toggleMic);
         inputField.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });

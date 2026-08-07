@@ -27,6 +27,16 @@ TTS_PROVIDER = os.getenv("TTS_PROVIDER", "cloud")
 # CosyVoice2 fukalos inference server (runs in WSL cosyvoice conda env).
 COSYVOICE_TTS_URL = os.getenv("COSYVOICE_TTS_URL", "http://localhost:9880/tts")
 
+# --- STT (speech-to-text, voice input) ---
+STT_PROVIDER = os.getenv("STT_PROVIDER", "whisper")
+# faster-whisper runs on the CPU by default to stay off the already-tight GPU
+# (CosyVoice2 + Ollama). int8 keeps the small model fast enough for short clips.
+WHISPER_MODEL_SIZE   = os.getenv("WHISPER_MODEL_SIZE",   "small")
+WHISPER_DEVICE       = os.getenv("WHISPER_DEVICE",       "cpu")
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+# Transcription language. "zh" for the Chinese-primary butler; "" = auto-detect.
+WHISPER_LANGUAGE     = os.getenv("WHISPER_LANGUAGE",     "zh")
+
 # --- Audio cache ---
 AUDIO_CACHE_DIR = Path(os.getenv("AUDIO_CACHE_DIR", str(PROJECT_DIR / "cache" / "audio")))
 

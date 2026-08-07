@@ -13,3 +13,8 @@ pywinauto
 #   enable by setting OBSIDIAN_VAULT_PATH in .env
 #   also requires:  ollama pull nomic-embed-text
 chromadb
+
+# Voice input (speech-to-text). Local, CPU-only by default (stays off the GPU).
+#   The model is downloaded on first use; without this package voice input is
+#   unavailable but text chat keeps working.
+faster-whisper

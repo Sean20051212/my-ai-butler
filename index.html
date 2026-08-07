@@ -243,6 +243,29 @@
             if (currentAudioUrl) { URL.revokeObjectURL(currentAudioUrl); currentAudioUrl = null; }
         }
 
+        // 喚醒被瀏覽器 autoplay 政策擋住的音訊環境（@pixi/sound 的 AudioContext）。
+        // 冷啟動時 AudioContext 預設是 suspended，不喚醒的話第一句話沒聲音、得靠
+        // Ctrl+R 重載才會解鎖。resume() 必須在使用者手勢的呼叫堆疊內執行才有效，
+        // 所以由送訊息／首次互動觸發。
+        function resumeAudioContext() {
+            try {
+                const s = window.PIXI && PIXI.sound;
+                const ctx = s && s.context && (s.context.audioContext || s.context._ctx);
+                if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+                    ctx.resume().catch(() => {});
+                }
+            } catch (e) {}
+        }
+
+        // 備援：任何第一次互動都嘗試解鎖一次（涵蓋之後的麥克風按鈕等入口）。
+        function unlockAudioOnce() {
+            resumeAudioContext();
+            window.removeEventListener('pointerdown', unlockAudioOnce);
+            window.removeEventListener('keydown', unlockAudioOnce);
+        }
+        window.addEventListener('pointerdown', unlockAudioOnce);
+        window.addEventListener('keydown', unlockAudioOnce);
+
         function sendMessage() {
             const text = inputField.value.trim();
             if (!text) return;
@@ -253,6 +276,7 @@
                 return;
             }
 
+            resumeAudioContext();  // 趁這次點擊/Enter 的手勢，先確保音訊環境已解鎖
             inputField.value = '';
             sendBtn.disabled = true;
             dialogBox.style.display = 'block';

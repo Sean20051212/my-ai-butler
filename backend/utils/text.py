@@ -28,6 +28,15 @@ def preprocess_for_tts(text: str) -> str:
     #     are narration, not speech, and must not be read aloud. Non-nested only.
     text = re.sub(r'[（(][^（(）)]*[）)]', '', text)
 
+    # 1c. Strip emotion tags like [happy] wherever they appear — defence in depth
+    #     so a misplaced tag never gets read aloud as the word "happy".
+    text = re.sub(
+        r'[\[［]\s*(?:neutral|happy|angry|sad|surprised|shy)\s*[\]］]',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    )
+
     # 2. Keep CJK, kana, safe punctuation, digits, ASCII letters and latin
     #    joiners; replace anything else (emoji, rare symbols) with '，'
     filtered = []

@@ -18,3 +18,10 @@ def test_keeps_english_words_intact():
 def test_clean_fallback_survives_preprocessing():
     # The empty-reply fallback must remain speakable (non-empty) after cleaning.
     assert preprocess_for_tts("嗯……讓我想一下。")
+
+
+def test_strips_misplaced_emotion_tag():
+    # A tag that leaked into the middle must not be read aloud as "happy".
+    out = preprocess_for_tts("我很好[happy]謝謝關心")
+    assert "happy" not in out.lower()
+    assert "謝謝關心" in out

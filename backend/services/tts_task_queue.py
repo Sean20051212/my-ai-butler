@@ -21,9 +21,20 @@ OnAudioReady = Callable[[int, Optional[bytes]], Awaitable[None]]
 
 
 class TTSTaskQueue:
-    def __init__(self, synthesize: Synthesize, on_audio_ready: OnAudioReady) -> None:
+    def __init__(
+        self,
+        synthesize: Synthesize,
+        on_audio_ready: OnAudioReady,
+        max_concurrency: int = 1,
+    ) -> None:
         self._synthesize = synthesize
         self._on_audio_ready = on_audio_ready
+        # Cap concurrent synthesis. Default 1: the local CosyVoice server holds a
+        # single non-thread-safe CUDA model, so overlapping requests would corrupt
+        # output — and one GPU model can't truly parallelise anyway. Serialising
+        # here still gives the win: sentence 1 synthesises and plays while later
+        # sentences wait their turn, instead of everything after the full reply.
+        self._semaphore = asyncio.Semaphore(max_concurrency)
         self._sequence_counter = 0
         self._next_to_send = 0
         self._buffered: dict[int, Optional[bytes]] = {}
@@ -40,7 +51,8 @@ class TTSTaskQueue:
 
     async def _synthesize_and_buffer(self, text: str, seq: int) -> None:
         try:
-            audio = await asyncio.to_thread(self._synthesize, text)
+            async with self._semaphore:
+                audio = await asyncio.to_thread(self._synthesize, text)
         except asyncio.CancelledError:
             raise  # barge-in — drop silently, deliver nothing
         except Exception as exc:  # pragma: no cover - defensive

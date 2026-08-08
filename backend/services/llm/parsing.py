@@ -33,3 +33,30 @@ def parse_emotion_tag(text: str) -> tuple[str, str]:
         return "neutral", text[match.end():]
 
     return "neutral", text
+
+
+def try_resolve_emotion_prefix(
+    buffer: str, max_wait: int = 16
+) -> tuple[str, str] | None:
+    """Streaming variant: decide the leading emotion from a *partial* buffer.
+
+    Returns ``(emotion, remaining_text)`` once the leading tag is resolved, or
+    ``None`` meaning "keep buffering — the tag may still be arriving".
+
+    Resolution rules:
+    - only whitespace so far → ``None`` (wait)
+    - first non-space char isn't a bracket → no tag, ``("neutral", buffer)``
+    - a complete ``[emotion]`` tag is present → parse it
+    - a bracket opened but no ``]`` after ``max_wait`` chars → give up, treat the
+      whole thing as text (``"neutral"``)
+    """
+    stripped = buffer.lstrip()
+    if not stripped:
+        return None
+    if stripped[0] not in "[［":
+        return "neutral", buffer
+    if _LEADING_TAG_RE.match(buffer):
+        return parse_emotion_tag(buffer)
+    if len(buffer) >= max_wait:
+        return "neutral", buffer
+    return None

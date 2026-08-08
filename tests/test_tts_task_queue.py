@@ -20,7 +20,9 @@ async def test_parallel_synth_ordered_delivery():
     async def on_ready(seq, audio):
         delivered.append((seq, audio))
 
-    q = TTSTaskQueue(synth, on_ready)
+    # max_concurrency=3 lets all three run at once, so this genuinely exercises
+    # the reorder buffer (s2 finishes first but must still be delivered last).
+    q = TTSTaskQueue(synth, on_ready, max_concurrency=3)
     q.submit("s0")
     q.submit("s1")
     q.submit("s2")

@@ -30,7 +30,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from backend.conversation import run_turn
+from backend.conversation import run_turn_streaming
 from backend.services.stt import get_stt_provider
 
 router = APIRouter()
@@ -41,40 +41,20 @@ router = APIRouter()
 stt_provider = get_stt_provider()
 
 
-async def _run_and_stream(ws: WebSocket, message: str, state, memory) -> None:
-    """Run one turn and push its output down the socket.
-
-    run_turn still returns the whole reply at once (LLM streaming is task 8), so
-    this emits a single audio segment (seq 0).  The protocol already numbers
-    segments, so task 8 can emit many without any client change.  Send failures
-    (client vanished) are swallowed — the connection teardown handles it.
-    """
-    try:
-        result = await run_turn(message, state, memory)
-        await ws.send_json({
-            "type": "reply",
-            "text": result.get("reply", ""),
-            "emotion": result.get("emotion", "neutral"),
-        })
-        audio_b64 = result.get("audio_base64")
-        if audio_b64:
-            await ws.send_json({"type": "audio", "seq": 0, "base64": audio_b64})
-        await ws.send_json({"type": "turn_end"})
-    except asyncio.CancelledError:
-        raise  # interrupted — let the canceller proceed, emit nothing further
-    except Exception as exc:  # pragma: no cover - defensive on a dead socket
-        print(f"WS turn error: {exc}")
-
-
 @router.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     state = ws.app.state.character
     memory = ws.app.state.memory
     current_task: asyncio.Task | None = None
+    current_queue = None  # the in-flight turn's TTSTaskQueue, for barge-in
 
     async def cancel_current() -> None:
-        nonlocal current_task
+        nonlocal current_task, current_queue
+        # Cancel pending TTS synthesis first so nothing new is delivered, then
+        # cancel the turn task itself.
+        if current_queue is not None:
+            current_queue.cancel_all()
         if current_task and not current_task.done():
             current_task.cancel()
             try:
@@ -83,12 +63,18 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 pass
             await ws.send_json({"type": "stopped"})
         current_task = None
+        current_queue = None
 
     async def start_turn(text: str) -> None:
-        nonlocal current_task
+        nonlocal current_task, current_queue
         await cancel_current()  # a new message supersedes the old turn
+
+        def register_queue(queue):
+            nonlocal current_queue
+            current_queue = queue
+
         current_task = asyncio.create_task(
-            _run_and_stream(ws, text, state, memory)
+            run_turn_streaming(text, state, memory, ws.send_json, register_queue)
         )
 
     try:

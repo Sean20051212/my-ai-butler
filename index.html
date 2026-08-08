@@ -171,10 +171,19 @@
                         dialogBox.innerText = '（沒聽清楚，再說一次？）';
                     }
                     break;
-                case 'reply':
+                case 'emotion':                  // 串流：情緒先到，立刻驅動表情
+                    triggerEmotionAction(msg.emotion);
+                    break;
+                case 'reply_chunk':              // 串流：逐句累加顯示
+                    dialogBox.style.display = 'block';
+                    if (awaitingFirstChunk) { dialogBox.innerText = msg.text; awaitingFirstChunk = false; }
+                    else { dialogBox.innerText += msg.text; }
+                    break;
+                case 'reply':                    // 非串流（HTTP 相容）：整段取代
                     dialogBox.style.display = 'block';
                     dialogBox.innerText = msg.text || '（沉默）';
                     triggerEmotionAction(msg.emotion);
+                    awaitingFirstChunk = false;
                     break;
                 case 'audio':
                     enqueueAudio(msg);
@@ -195,6 +204,7 @@
         const audioQueue = [];    // 待播的 {seq, base64}
         let expectedSeq = 0;      // 下一個該播的 seq
         let playing = false;
+        let awaitingFirstChunk = false;  // 新一輪的第一段 reply_chunk 要取代「思考中」
 
         function resetAudioQueue() {
             audioQueue.length = 0;
@@ -213,6 +223,11 @@
             const next = audioQueue[0];
             if (!next || next.seq !== expectedSeq) return;  // 等缺號的那段到齊
             audioQueue.shift();
+            if (!next.base64) {          // 靜音段：不播放，但仍要推進序號，否則後面卡住
+                expectedSeq += 1;
+                pumpAudio();
+                return;
+            }
             playing = true;
             playSegment(next.base64, () => {
                 playing = false;
@@ -316,6 +331,7 @@
                 recordedChunks = [];
                 if (blob.size === 0 || !wsReady) return;
                 stopAllAudio();  // 新的一句話取代還在播的回覆
+                awaitingFirstChunk = true;
                 dialogBox.style.display = 'block';
                 dialogBox.innerText = '辨識中...';
                 ws.send(await blob.arrayBuffer());  // binary frame = 一段完整語音
@@ -354,6 +370,7 @@
             dialogBox.innerText = '思考中...';
 
             stopAllAudio();  // 開始新一輪，先清掉上一輪殘留的語音
+            awaitingFirstChunk = true;
             ws.send(JSON.stringify({ type: 'text', text }));
         }
         

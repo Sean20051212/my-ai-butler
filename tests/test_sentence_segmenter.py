@@ -54,6 +54,23 @@ async def test_punctuation_only_is_skipped():
 
 
 @pytest.mark.asyncio
+async def test_short_sentences_merged_by_min_len():
+    seg = SentenceSegmenter(faster_first_response=False, min_len=8)
+    out = await _collect(seg, ["好。壞。", "可以嗎？再想想吧。"])
+    # "好。"/"壞。" are too short to stand alone → merged up to min_len.
+    assert out[0].text == "好。壞。可以嗎？"
+    assert out[1].text == "再想想吧。"  # trailing short chunk flushed at the end
+
+
+@pytest.mark.asyncio
+async def test_faster_first_does_not_split_tiny_head():
+    seg = SentenceSegmenter(faster_first_response=True, min_len=8)
+    out = await _collect(seg, ["哼哼，主人早安！今天天氣真好？"])
+    # "哼哼，" is below min_len, so no tiny fragment — first segment is a full sentence.
+    assert out[0].text == "哼哼，主人早安！"
+
+
+@pytest.mark.asyncio
 async def test_max_buffer_force_flush():
     seg = SentenceSegmenter(faster_first_response=False, max_buffer=10)
     long_no_punct = "一二三四五六七八九十十一十二"  # >10 chars, no end punctuation

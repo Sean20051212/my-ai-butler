@@ -164,6 +164,7 @@ async def run_turn_streaming(message, state, memory, emit, register_queue=None):
             await emit({"type": "emotion", "emotion": emotion})
 
         async def on_audio_ready(seq, audio):
+            print(f"[TTS] seq={seq} {'OK ' + str(len(audio)) + 'B' if audio else 'SILENT/FAIL'}")
             await emit({
                 "type": "audio",
                 "seq": seq,
@@ -174,7 +175,9 @@ async def run_turn_streaming(message, state, memory, emit, register_queue=None):
         if register_queue is not None:
             register_queue(tts_queue)
 
-        segmenter = SentenceSegmenter(faster_first_response=True)
+        # Segment by whole sentences (no tiny comma fragments), merging any
+        # sentence shorter than min_len so slow TTS gets coherent chunks.
+        segmenter = SentenceSegmenter(faster_first_response=False, min_len=8)
         text_stream = _emotion_then_text(llm_provider.chat_stream(messages), on_emotion)
 
         async for sentence in segmenter.process_stream(text_stream):
@@ -182,6 +185,7 @@ async def run_turn_streaming(message, state, memory, emit, register_queue=None):
             clean = converter.convert(_ARTIFACT_RE.sub("", sentence.text)).strip()
             if not clean:
                 continue
+            print(f"[SEG] {clean!r}")
             collected.append(clean)
             await emit({"type": "reply_chunk", "text": clean})
             tts_queue.submit(clean)

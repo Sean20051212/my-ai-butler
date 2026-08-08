@@ -41,9 +41,19 @@ class SegmentedSentence:
 
 
 class SentenceSegmenter:
-    def __init__(self, faster_first_response: bool = True, max_buffer: int = 60):
+    def __init__(
+        self,
+        faster_first_response: bool = True,
+        max_buffer: int = 60,
+        min_len: int = 0,
+    ):
+        # min_len: sentences shorter than this are merged forward instead of
+        # emitted alone, so slow TTS isn't handed tiny fragments like "哼哼"
+        # (which synthesise oddly and leave an awkward gap before the real
+        # first sentence). 0 disables merging.
         self.faster_first_response = faster_first_response
         self.max_buffer = max_buffer
+        self.min_len = min_len
         self._buffer = ""
         self._is_first = True
 
@@ -64,26 +74,28 @@ class SentenceSegmenter:
         """Pull every sentence the buffer can currently yield (keeps a remainder)."""
         out: list[SegmentedSentence] = []
 
-        # First-sentence fast path: split at the first comma if one is present.
+        # First-sentence fast path: split at the first comma — but only if the
+        # head is already substantial, so we never emit a tiny "哼哼，" fragment.
         if self._is_first and self.faster_first_response:
             m = _COMMA_RE.search(self._buffer)
             if m:
                 head = self._buffer[: m.end()].strip()
-                self._buffer = self._buffer[m.end():]
-                if _has_speakable(head):
+                if _has_speakable(head) and len(head) >= self.min_len:
+                    self._buffer = self._buffer[m.end():]
                     out.append(self._make(head))
 
-        # Normal path: extract every complete (end-punctuated) sentence.
-        last = 0
-        for match in _SENTENCE_RE.finditer(self._buffer):
-            sentence = match.group().strip()
-            last = match.end()
-            if _has_speakable(sentence):
-                out.append(self._make(sentence))
-        if last:
-            self._buffer = self._buffer[last:]
+        # Normal path: extract complete sentences, merging any that fall short
+        # of min_len into the following one (don't advance past a short chunk).
+        text = self._buffer
+        chunk_start = 0
+        for match in _SENTENCE_RE.finditer(text):
+            candidate = text[chunk_start: match.end()].strip()
+            if _has_speakable(candidate) and len(candidate) >= self.min_len:
+                out.append(self._make(candidate))
+                chunk_start = match.end()
+        self._buffer = text[chunk_start:]
 
-        # Guard: no punctuation for too long → force-flush so we never stall.
+        # Guard: no boundary for too long → force-flush so we never stall.
         if len(self._buffer) >= self.max_buffer:
             chunk = self._buffer.strip()
             self._buffer = ""

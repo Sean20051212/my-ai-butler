@@ -283,10 +283,13 @@
             }
 
             // 後援：用音檔實際時長推進佇列。這個引擎的 onFinish 不一定會觸發，
-            // 少了它下一段就永遠等不到；用時長計時器保證佇列一定會往前走。
+            // 少了它下一段就永遠等不到。緩衝抓大一點（+700ms），避免計時器早於
+            // 真正播完就推進、害下一段的 speak() 把這段尾音截掉。解碼失敗時用
+            // 位元組數估算（約 44.1 B/ms @ 22050Hz 16-bit），確保一定有兜底。
+            const scheduleFallback = (ms) => { if (!done && myGen === playGeneration) setTimeout(finish, ms); };
             getDecodeCtx().decodeAudioData(bytes.buffer.slice(0))
-                .then((buf) => { if (!done && myGen === playGeneration) setTimeout(finish, buf.duration * 1000 + 400); })
-                .catch(() => {});
+                .then((buf) => scheduleFallback(buf.duration * 1000 + 700))
+                .catch(() => scheduleFallback(Math.max(1500, Math.round(bytes.length / 44.1) + 700)));
         }
 
         function stopAllAudio() {

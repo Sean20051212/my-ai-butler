@@ -273,32 +273,28 @@
                 onDone();
             };
 
-            // 關鍵：一進來就「立刻」排一個以位元組估算的後援計時器，完全不依賴
-            // 解碼或引擎 onFinish（兩者都可能沒觸發）。這保證每一段都會結束、
-            // 佇列一定會推進到下一段。估算偏長一點（44.1 B/ms @ 22050Hz 16-bit
-            // ＋700ms），避免早於真正播完就推進而截掉尾音。
-            timer = setTimeout(finish, Math.max(1500, Math.round(bytes.length / 44.1) + 700));
+            // 佇列推進「只」靠時長計時器，刻意不接引擎的 onFinish：這個引擎的
+            // onFinish 時機不可靠，可能過早觸發，害我們在上一段還在播時就 speak
+            // 下一段、兩者重疊而把某段吞掉。用「實際時長＋700ms」一定晚於真正
+            // 播完，所以不會提前、不重疊、不跳過，也保證會推進。
+            const arm = (ms) => {
+                if (done || myGen !== playGeneration) return;
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(finish, ms);
+            };
+            // 先用位元組估算（44.1 B/ms @ 22050Hz 16-bit），解碼成功再換精確時長。
+            arm(Math.max(1500, Math.round(bytes.length / 44.1) + 700));
 
             try {
-                live2dModel.speak(url, {
-                    volume: 1.0,
-                    onFinish: finish,   // 有觸發就提早結束（會 clearTimeout）
-                    onError: (e) => { console.warn('speak 失敗:', e); finish(); },
-                });
+                live2dModel.speak(url, { volume: 1.0 });  // 只負責播放＋對嘴
             } catch (err) {
-                // speak() 偶爾會同步丟例外（音檔解碼失敗等）；別讓佇列卡死。
                 console.error('speak() 例外:', err);
                 finish();
                 return;
             }
 
-            // 解碼成功則用精確時長取代估算計時器（更準、不會過早或過晚）。
             getDecodeCtx().decodeAudioData(bytes.buffer.slice(0))
-                .then((buf) => {
-                    if (done || myGen !== playGeneration) return;
-                    if (timer) clearTimeout(timer);
-                    timer = setTimeout(finish, buf.duration * 1000 + 700);
-                })
+                .then((buf) => arm(buf.duration * 1000 + 700))
                 .catch(() => {});
         }
 
